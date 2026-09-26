@@ -71,10 +71,10 @@ growth["change"] = growth.iloc[:, 1] / growth.iloc[:, 0] - 1
 growth.loc[["completed", "revenue", "failures", "failure_rate", "riders", "stations", "per_swap_amount_charged_inr", "per_swap_cm1", "per_swap_cm2"]]
 
 # %%
-EVENTS = [("2024-07-01", "① price rise"), ("2024-08-01", "② Kyron lots KY-2407..09"), ("2024-10-01", "③ peak pilot"), ("2024-11-01", "④ ZipDrop 12%→28%")]
+EVENTS = [("2024-07-01", "price rise"), ("2024-08-01", "Kyron lots KY-2407..09"), ("2024-10-01", "peak pilot"), ("2024-11-01", "ZipDrop 12%→28%")]
 
 
-def mark(ax, events=EVENTS, top=0.98, step=0.075):
+def mark(ax, events=EVENTS, top=0.60, step=0.07):
     tr = ax.get_xaxis_transform()
     for i, (d, lbl) in enumerate(events):
         ax.axvline(pd.Timestamp(d), color=PAL["muted"], ls=":", lw=1)
@@ -109,7 +109,7 @@ ax.stackplot(w.index, w["Energy"], w["Station fixed"], w["Battery wear"], labels
              colors=["#f2c14e", "#9aa5b1", PAL["accent"]], alpha=.85)
 ax.plot(w.index, w["Revenue"], color=PAL["good"], lw=2.5, label="Revenue per swap")
 ax.set_title("Per-swap revenue vs cost stack (₹): the price rise was absorbed by battery wear within two months")
-ax.legend(loc="upper left", ncol=2, fontsize=8); ax.set_ylim(0, 125); mark(ax)
+ax.legend(loc="upper left", ncol=2, fontsize=8); ax.set_ylim(0, 125); mark(ax, top=0.97)
 save(fig, "05_cost_stack")
 w.round(2).iloc[[0, 5, 6, 8, 9, 10, 17]]
 
