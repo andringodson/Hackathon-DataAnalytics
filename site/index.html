@@ -4,23 +4,289 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>VoltRelay Network Analysis</title>
-  <meta name="description" content="Interactive dashboard: what drives service failures, new-rider churn and margin erosion on VoltRelay's battery-swap network." />
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@stlite/browser@1.9.2/build/stlite.css" />
-  <style>
-    :root { --bg: #fcfcfb; --ink: #52514e; }
-    @media (prefers-color-scheme: dark) { :root { --bg: #1a1a19; --ink: #c3c2b7; } }
-    html, body { margin: 0; background: var(--bg); }
-    #boot { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink); padding: 48px 16px; text-align: center; }
-  </style>
+  <meta name="description" content="What drives service failures, new-rider churn and margin erosion on VoltRelay's battery-swap network: an interactive analysis of 3.9M swap attempts." />
+  <meta name="color-scheme" content="light dark" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23184f95'/%3E%3Cpath d='M18 5 9 18h6l-2 9 10-14h-6z' fill='%23fff'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="styles.css" />
+  <script>
+    try { const t = localStorage.getItem("vr-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+  </script>
 </head>
 <body>
-  <div id="root"><div id="boot">Loading the dashboard — Python starts inside your browser, so the first load takes 15–30 seconds…</div></div>
-  <script type="module">
-    import { mount } from "https://cdn.jsdelivr.net/npm/@stlite/browser@1.9.2/build/stlite.js";
-    const manifest = await (await fetch("./manifest.json")).json();
-    const files = Object.fromEntries(manifest.map((p) => [p, { url: `./${p}` }]));
-    mount({ requirements: ["plotly>=5.24"], entrypoint: "dashboard/app.py", files, streamlitConfig: { "client.toolbarMode": "viewer" } },
-          document.getElementById("root"));
-  </script>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="#top" aria-label="VoltRelay analysis, back to top">
+        <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M13.5 2 5 14h5.5L9 22l9.5-13H13z" /></svg></span>
+        <span class="brand-text"><strong>VoltRelay</strong><span>Network analysis</span></span>
+      </a>
+      <nav class="nav" aria-label="Sections">
+        <a href="#overview">Overview</a>
+        <a href="#failures">Failures</a>
+        <a href="#stations">Stations</a>
+        <a href="#batteries">Batteries</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#retention">Retention</a>
+        <a href="#actions">Actions</a>
+        <a href="#quality">Data quality</a>
+      </nav>
+      <div class="topbar-tools">
+        <button class="icon-btn" id="theme-toggle" type="button" aria-label="Toggle dark mode">
+          <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5" /><path d="M12 2v2.5M12 19.5V22M4.2 4.2 6 6M18 18l1.8 1.8M2 12h2.5M19.5 12H22M4.2 19.8 6 18M18 6l1.8-1.8" /></svg>
+          <svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" /></svg>
+        </button>
+        <a class="icon-btn" href="https://github.com/andringodson/Hackathon-DataAnalytics" aria-label="Source code on GitHub">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path class="fill" d="M12 2a10 10 0 0 0-3.2 19.5c.5.1.7-.2.7-.5v-1.7c-2.8.6-3.4-1.3-3.4-1.3-.5-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.6 2.4 1.1 3 .9.1-.7.4-1.1.6-1.4-2.2-.2-4.6-1.1-4.6-5 0-1.1.4-2 1-2.7-.1-.3-.4-1.3.1-2.7 0 0 .8-.3 2.8 1a9.6 9.6 0 0 1 5 0c1.9-1.3 2.8-1 2.8-1 .5 1.4.2 2.4.1 2.7.6.7 1 1.6 1 2.7 0 3.9-2.4 4.7-4.6 5 .4.3.7.9.7 1.9V21c0 .3.2.6.7.5A10 10 0 0 0 12 2z" /></svg>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- HERO -->
+    <section class="hero" id="top">
+      <div class="hero-inner">
+        <p class="eyebrow">Gradient Learnings Data Analytics Hackathon</p>
+        <h1>Growth hid two fixable failures.</h1>
+        <p class="lede">VoltRelay tripled its revenue in 18 months, but service failures grew almost six-fold and every swap still loses money after battery wear. The cause is not competition or demand. It is <strong>overheating Gen1 cabinets</strong> and <strong>three bad battery lots</strong>.</p>
+        <ul class="chips" aria-label="Scope">
+          <li>6 cities</li><li>Jan 2024 – Jun 2025</li><li>3.9M swap attempts</li><li>1.5M station-hours</li><li>20K riders</li>
+        </ul>
+        <div class="hero-cta">
+          <a class="btn btn-primary" href="https://github.com/andringodson/Hackathon-DataAnalytics/blob/main/report/analysis_report.md">Read the report</a>
+          <a class="btn btn-glass" href="https://colab.research.google.com/github/andringodson/Hackathon-DataAnalytics/blob/main/notebooks/VoltRelay_Analysis.ipynb">Open the notebook in Colab</a>
+        </div>
+      </div>
+      <div class="hero-grid" aria-hidden="true"></div>
+    </section>
+
+    <section class="kpis" aria-label="Headline numbers">
+      <div class="kpi-grid" id="kpis"></div>
+      <p class="kpi-note">Monthly averages, Q2 2025 vs Q1 2024. Sparklines show all 18 months.</p>
+    </section>
+
+    <section class="insights" aria-label="Key findings">
+      <article class="insight">
+        <div class="insight-icon heat" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M14 14.8V5a2 2 0 1 0-4 0v9.8a4 4 0 1 0 4 0z" /><path d="M12 18v-6" /></svg></div>
+        <p class="insight-num">58%</p>
+        <h3>of hot hours, Gen1 cabinets are empty</h3>
+        <p>Above 40 °C, Gen1 charge time doubles. Delhi NCR, Jaipur and Hyderabad hold 36 of the 51 Gen1 cabinets, so failures triple there every summer.</p>
+        <a href="#stations" class="more">See the mechanism →</a>
+      </article>
+      <article class="insight">
+        <div class="insight-icon battery" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="16" height="10" rx="2" /><path d="M21 11v2M7 10v4M10.5 10v4" /></svg></div>
+        <p class="insight-num">3×</p>
+        <h3>faster wear in three Kyron battery lots</h3>
+        <p>Lots KY-2407/08/09 cost ~₹45M in excess wear, wiped out the July 2024 price rise and cut delivered range.</p>
+        <a href="#batteries" class="more">See the battery cohorts →</a>
+      </article>
+      <article class="insight">
+        <div class="insight-icon rider" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="7" r="3.5" /><path d="M5 21a7 7 0 0 1 14 0" /></svg></div>
+        <p class="insight-num">65%</p>
+        <h3>retention when over 20% of a new rider's first-fortnight attempts fail</h3>
+        <p>vs ~87% for riders whose first two weeks go smoothly. Early stockouts and short range drive churn; competitors do not.</p>
+        <a href="#retention" class="more">See the churn drivers →</a>
+      </article>
+    </section>
+
+    <!-- 01 OVERVIEW -->
+    <section class="section" id="overview">
+      <header class="section-head">
+        <span class="section-num">01</span>
+        <div>
+          <p class="eyebrow">Network performance over time</p>
+          <h2>Four metrics, four different stories</h2>
+          <p class="section-lede">Volume and revenue grew steadily. Failures spiked every summer, and contribution per swap after battery wear barely moved, because rising wear cancelled out the July 2024 price rise.</p>
+        </div>
+      </header>
+      <div class="grid-2">
+        <figure class="card" data-chart="growth"><figcaption><h3>Growth index</h3><p>Jan 2024 = 100. Failures grew twice as fast as swaps.</p></figcaption></figure>
+        <figure class="card" data-chart="failrate"><figcaption><h3>Service-failure rate</h3><p>Flat around 4%, except in the summer months (shaded).</p></figcaption></figure>
+        <figure class="card" data-chart="margin"><figcaption><h3>Contribution per completed swap</h3><p>₹ per swap, before and after battery wear.</p></figcaption></figure>
+        <figure class="card" data-chart="coststack"><figcaption><h3>Where each rupee goes</h3><p>Cost per swap by component vs revenue per swap.</p></figcaption></figure>
+      </div>
+    </section>
+
+    <!-- 02 FAILURES -->
+    <section class="section" id="failures">
+      <header class="section-head">
+        <span class="section-num">02</span>
+        <div>
+          <p class="eyebrow">Service failures and customer experience</p>
+          <h2>Failure is concentrated, seasonal and predictable</h2>
+          <p class="section-lede">All 25 worst stations are Gen1 launch sites in three cities. The experience breaks through empty cabinets, not long queues: queue wait is ~4 minutes everywhere.</p>
+        </div>
+      </header>
+      <div class="filter-row" role="group" aria-label="Filter by city">
+        <span class="filter-label">Cities</span>
+        <div class="chip-toggles" id="city-filter"></div>
+      </div>
+      <figure class="card wide" data-chart="heatmap"><figcaption><h3>Failure rate by city and month</h3><p>Darker = more failed or abandoned attempts.</p></figcaption></figure>
+      <div class="grid-2">
+        <figure class="card" data-chart="hourly"><figcaption><h3>By hour of day</h3><p>3W riders fail twice as often at every hour; the evening peak (shaded) is worst.</p></figcaption></figure>
+        <figure class="card" data-chart="eventmix"><figcaption><h3>Why attempts fail</h3><p>Share of all attempts, by outcome. Summer spikes are stockouts.</p></figcaption></figure>
+      </div>
+      <div class="grid-map">
+        <figure class="card map-card" data-map="stations">
+          <figcaption><h3>Station map</h3><p>Colour = charger generation · size = failure rate.</p></figcaption>
+          <div class="map" id="station-map" role="region" aria-label="Map of swap stations"></div>
+          <div class="legend-row" id="map-legend"></div>
+        </figure>
+        <figure class="card" data-table="worst-stations">
+          <figcaption><h3>Worst 10 stations</h3><p>By share of attempts that failed, Jan 2024 – Jun 2025.</p></figcaption>
+          <div class="table-scroll" id="worst-stations"></div>
+        </figure>
+      </div>
+    </section>
+
+    <!-- 03 STATIONS -->
+    <section class="section" id="stations">
+      <header class="section-head">
+        <span class="section-num">03</span>
+        <div>
+          <p class="eyebrow">Station and geographic patterns</p>
+          <h2>Gen1 cabinets cannot charge in the heat</h2>
+          <p class="section-lede">Hourly telemetry shows the mechanism. Controlling for city, site type, host and connectivity, a Gen1 cabinet on a hot day fails 9 pp more often than a Gen2 cabinet on the same day. Location type and connectivity barely matter.</p>
+        </div>
+      </header>
+      <div class="grid-2">
+        <figure class="card" data-chart="chargetime"><figcaption><h3>Battery turnaround time</h3><p>Average minutes to charge a pack, by ambient temperature.</p></figcaption></figure>
+        <figure class="card" data-chart="stockout"><figcaption><h3>Hours with zero charged packs</h3><p>Share of station-hours with no charged 2W pack available.</p></figcaption></figure>
+      </div>
+      <div class="callout">
+        <div class="callout-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M12 8v5M12 16h.01" /></svg></div>
+        <div>
+          <h3>Expansion went where sites were easy, not where riders were failing</h3>
+          <p>Wave 1 added 30 stations, mostly highway fuel pumps and residential sites running ~55 swaps a day, against ~77 at launch hubs. New stations show almost no relationship with where service was failing (r = 0.11). The Gen1 hubs behind the failures were not upgraded, and their summer failure rate in 2025 was unchanged from 2024.</p>
+        </div>
+      </div>
+      <div class="wave-grid" id="waves"></div>
+    </section>
+
+    <!-- 04 BATTERIES -->
+    <section class="section" id="batteries">
+      <header class="section-head">
+        <span class="section-num">04</span>
+        <div>
+          <p class="eyebrow">Battery and equipment performance</p>
+          <h2>Three bad lots drove margin erosion and falling range</h2>
+          <p class="section-lede">Kyron's first deliveries (Jul–Sep 2024) lose state of health about three times faster than every other lot, including Kyron's own later lots. That points to a batch defect, not a bad supplier.</p>
+        </div>
+      </header>
+      <figure class="card wide" data-chart="lots"><figcaption><h3>State-of-health lost per 100 swaps, by manufacturing lot</h3><p>All 55 lots in commissioning order. The three highlighted lots are the outliers.</p></figcaption></figure>
+      <div class="grid-2">
+        <figure class="card" data-chart="range">
+          <figcaption><h3>Delivered range vs battery health</h3><p>km covered per swap by the SoH of the returned pack.</p></figcaption>
+          <div class="segmented" id="pack-toggle" role="radiogroup" aria-label="Pack type">
+            <button type="button" role="radio" aria-checked="true" data-pack="2W_2.1kWh">2W pack</button>
+            <button type="button" role="radio" aria-checked="false" data-pack="3W_4.8kWh">3W pack</button>
+          </div>
+        </figure>
+        <figure class="card" data-chart="fleet"><figcaption><h3>The fleet is ageing</h3><p>Index, Jan 2024 = 100. Range fell 30%, faster than SoH (−23%).</p></figcaption></figure>
+      </div>
+      <div class="stat-row" id="battery-stats"></div>
+    </section>
+
+    <!-- 05 PRICING -->
+    <section class="section" id="pricing">
+      <header class="section-head">
+        <span class="section-num">05</span>
+        <div>
+          <p class="eyebrow">Pricing and partner economics</p>
+          <h2>Pricing helped revenue, not reliability</h2>
+          <p class="section-lede">The July 2024 price rise had no visible demand penalty. The peak pilot shifted ~3 pp of demand and added ₹6–8 per exposed swap, but it ran in the two least congested cities, so reliability did not change.</p>
+        </div>
+      </header>
+      <div class="grid-2">
+        <figure class="card" data-chart="pilot"><figcaption><h3>Peak-hour share, independent riders</h3><p>Pilot cities (Bengaluru, Pune) vs control, weekly.</p></figcaption></figure>
+        <figure class="card" data-chart="did"><figcaption><h3>Pilot effect by who pays the surcharge</h3><p>Difference-in-differences, percentage points with 95% CI.</p></figcaption></figure>
+      </div>
+      <figure class="card wide" data-chart="partners"><figcaption><h3>Fleet partners: volume isn't value</h3><p>Total revenue vs contribution per swap before wear. Bubble size = swaps. ZipDrop is the largest partner and the least profitable 2W one.</p></figcaption></figure>
+      <figure class="card wide" data-table="partners">
+        <figcaption><h3>Partner scorecard</h3><p>Click a column heading to sort.</p></figcaption>
+        <div class="table-scroll" id="partner-table"></div>
+      </figure>
+    </section>
+
+    <!-- 06 RETENTION -->
+    <section class="section" id="retention">
+      <header class="section-head">
+        <span class="section-num">06</span>
+        <div>
+          <p class="eyebrow">Root cause of new-rider churn</p>
+          <h2>New riders leave when the network fails them early</h2>
+          <p class="section-lede">Monthly cohorts' retention moves almost perfectly against their early failure rate (r = −0.87). A logistic model and a hold-out gradient-boosting check both rank early failures and delivered range as the primary drivers.</p>
+        </div>
+      </header>
+      <figure class="card wide" data-chart="cohort"><figcaption><h3>Cohorts: retention vs first-two-week failures</h3><p>New riders grouped by the month of their first swap. Retention = any swap 30–59 days later.</p></figcaption></figure>
+      <div class="grid-2">
+        <figure class="card" data-chart="lift">
+          <figcaption><h3>Retention explorer</h3><p>Pick a factor to see how retention varies across it.</p></figcaption>
+          <label class="select-wrap"><span class="sr-only">Factor</span><select id="factor-select"></select></label>
+        </figure>
+        <figure class="card" data-chart="logit"><figcaption><h3>What predicts retention, all else equal</h3><p>Logistic regression coefficients with 95% CI. Orange = significant (p &lt; 0.05).</p></figcaption></figure>
+      </div>
+      <div class="tiers">
+        <div class="tier tier-primary"><span class="tier-tag">Primary</span><p><strong>Early service failure</strong> and <strong>delivered range</strong> in the first 14 days</p></div>
+        <div class="tier tier-secondary"><span class="tier-tag">Secondary</span><p>3W vehicle · hot, Gen1-heavy home city · partner-billed plan · peak-price exposure (minor)</p></div>
+        <div class="tier tier-none"><span class="tier-tag">Not drivers</span><p>Competitor nearby · competitor promos · signup channel · KYC</p></div>
+      </div>
+    </section>
+
+    <!-- 07 ACTIONS -->
+    <section class="section" id="actions">
+      <header class="section-head">
+        <span class="section-num">07</span>
+        <div>
+          <p class="eyebrow">Recommendations</p>
+          <h2>What the next budget should fund</h2>
+          <p class="section-lede">Leadership has four competing proposals on the table. The evidence supports redirecting most of them.</p>
+        </div>
+      </header>
+      <div class="verdicts" id="verdicts"></div>
+      <h3 class="subhead">Prioritised action plan</h3>
+      <ol class="plan" id="plan"></ol>
+    </section>
+
+    <!-- 08 QUALITY -->
+    <section class="section" id="quality">
+      <header class="section-head">
+        <span class="section-num">08</span>
+        <div>
+          <p class="eyebrow">Data quality and anomalies</p>
+          <h2>Tested, not assumed</h2>
+          <p class="section-lede">Every documented data issue was tested before it was handled, and three undocumented ones turned up. Some findings should be raised with operations directly.</p>
+        </div>
+      </header>
+      <div class="anomalies" id="anomalies"></div>
+      <figure class="card wide" data-chart="tickets"><figcaption><h3>Complaints in riders' own words</h3><p>Support tickets classified from free text (English and Hinglish). Every "other" ticket is a vague vehicle complaint, and those tickets point at the same bad battery lots as explicit range complaints.</p></figcaption></figure>
+      <div class="table-scroll card wide flat" id="cleaning"></div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div>
+        <p class="brand-text"><strong>VoltRelay network analysis</strong></p>
+        <p class="muted">Synthetic hackathon dataset (seed 59500). Findings are associations from observational data, backed by mechanisms that agree across telemetry, events, the battery ledger and support tickets.</p>
+      </div>
+      <nav class="footer-links" aria-label="Resources">
+        <a href="https://github.com/andringodson/Hackathon-DataAnalytics/blob/main/report/analysis_report.md">Report</a>
+        <a href="https://github.com/andringodson/Hackathon-DataAnalytics/blob/main/report/analysis_report.pdf">Report (PDF)</a>
+        <a href="https://colab.research.google.com/github/andringodson/Hackathon-DataAnalytics/blob/main/notebooks/VoltRelay_Analysis.ipynb">Notebook</a>
+        <a href="https://github.com/andringodson/Hackathon-DataAnalytics/tree/main/data/processed">Data</a>
+        <a href="https://github.com/andringodson/Hackathon-DataAnalytics">Source</a>
+      </nav>
+    </div>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="app.js" type="module"></script>
 </body>
 </html>

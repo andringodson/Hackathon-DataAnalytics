@@ -12,7 +12,7 @@ Submission for the **Gradient Learnings Data Analytics Hackathon**: an investiga
 | **Colab notebook**: data understanding, cleaning, EDA, analysis of all six core questions and five deep dives; runs top to bottom | [`notebooks/VoltRelay_Analysis.ipynb`](notebooks/VoltRelay_Analysis.ipynb) · [open in Colab](https://colab.research.google.com/github/andringodson/Hackathon-DataAnalytics/blob/main/notebooks/VoltRelay_Analysis.ipynb) |
 | **Analysis report**: problem, approach, insights, visuals, findings, recommendations | [`report/analysis_report.md`](report/analysis_report.md) · [PDF](report/analysis_report.pdf) |
 | **Three-minute video**: script and suggested visuals | [`report/video_script.md`](report/video_script.md) |
-| **Interactive dashboard** (bonus) | [andringodson.github.io/Hackathon-DataAnalytics](https://andringodson.github.io/Hackathon-DataAnalytics/) (Streamlit via stlite on GitHub Pages; first load ~20 s) |
+| **Interactive dashboard** (bonus) | [andringodson.github.io/Hackathon-DataAnalytics](https://andringodson.github.io/Hackathon-DataAnalytics/) (interactive web app on GitHub Pages: story-led sections, filters, map, dark mode, table view and CSV export for every chart) |
 
 ## Key findings
 
@@ -36,7 +36,7 @@ report/
   video_script.md            three-minute presentation script
   figures/                   all charts, exported by the notebook
 dashboard/app.py             Streamlit dashboard
-site/                        stlite loader + build script: runs the dashboard in the browser on GitHub Pages
+site/                        hosted dashboard (HTML/CSS/JS, ECharts + Leaflet); build.py packs data/processed into data.json
 .github/workflows/pages.yml  deploys the dashboard to GitHub Pages on every push
 data/
   download_data.py           fetches the eight raw CSVs (~830 MB) from the organiser's Drive
@@ -56,7 +56,8 @@ pip install -r requirements.txt gdown seaborn statsmodels scikit-learn scipy mat
 python data/download_data.py                        # -> data/raw/
 cd notebooks && VOLTRELAY_DATA=../data/raw VOLTRELAY_FIGS=../report/figures VOLTRELAY_OUT=../data/processed \
   jupyter nbconvert --to notebook --execute VoltRelay_Analysis.ipynb --inplace
-streamlit run dashboard/app.py
+streamlit run dashboard/app.py                     # Python version of the dashboard
+python site/build.py && python -m http.server -d _site   # the hosted web dashboard, at localhost:8000
 ```
 
 ## Data-quality handling at a glance

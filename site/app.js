@@ -1,0 +1,757 @@
+const D = await (await fetch("data.json")).json();
+const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const FONT = 'Inter, system-ui, -apple-system, "Segoe UI", sans-serif';
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const el = (tag, props = {}, ...kids) => {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k === "class") n.className = v;
+    else if (k === "text") n.textContent = v;
+    else if (k === "style") n.style.cssText = v;
+    else n.setAttribute(k, v);
+  }
+  for (const k of kids) if (k != null) n.append(k);
+  return n;
+};
+
+// ---------- formatting ----------
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const mLabel = (iso) => { const [y, m] = iso.split("-"); return `${MONTHS[+m - 1]} ${y.slice(2)}`; };
+const wLabel = (iso) => { const [, m, d] = iso.split("-"); return `${+d} ${MONTHS[+m - 1]}`; };
+const pct = (v, d = 1) => (v == null ? "–" : `${(v * 100).toFixed(d)}%`);
+const inr = (v, d = 1) => (v == null ? "–" : `${v < 0 ? "−" : ""}₹${Math.abs(v).toFixed(d)}`);
+const compact = (v) => (Math.abs(v) >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : Math.abs(v) >= 1e3 ? `${(v / 1e3).toFixed(1)}K` : `${Math.round(v)}`);
+const int = (v) => Math.round(v).toLocaleString("en-IN");
+
+// ---------- theme tokens ----------
+function isDark() {
+  const t = document.documentElement.dataset.theme;
+  return t ? t === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+}
+function tokens() {
+  const cs = getComputedStyle(document.documentElement);
+  const v = (n) => cs.getPropertyValue(n).trim();
+  const dark = isDark();
+  return {
+    dark, surface: v("--surface"), surface2: v("--surface-2"), ink: v("--ink"), ink2: v("--ink-2"), muted: v("--muted"), line: v("--line"), axis: v("--axis"),
+    s1: v("--s1"), s2: v("--s2"), s3: v("--s3"), s4: v("--s4"),
+    ramp: dark ? ["#104281", "#1c5cab", "#2a78d6", "#5598e7", "#86b6ef", "#b7d3f6"] : ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"],
+    wash: dark ? "rgba(255,255,255,0.05)" : "rgba(11,11,11,0.045)",
+  };
+}
+let T = tokens();
+const GEN = () => ({ Gen1: T.s2, Gen2: T.s1, Gen3: T.s3 });
+
+// ---------- shared chart pieces ----------
+function base(extra = {}) {
+  return {
+    animation: !REDUCED, animationDuration: 700, animationEasing: "cubicOut",
+    textStyle: { fontFamily: FONT, color: T.ink2 },
+    grid: { left: 4, right: 18, top: 40, bottom: 4, containLabel: true },
+    tooltip: {
+      confine: true, backgroundColor: T.surface, borderColor: T.line, borderWidth: 1, padding: [8, 12],
+      textStyle: { color: T.ink, fontSize: 12, fontFamily: FONT }, extraCssText: "border-radius:10px;box-shadow:0 10px 30px -10px rgba(0,0,0,.35);",
+    },
+    legend: { top: 0, left: 0, itemGap: 16, itemWidth: 16, itemHeight: 3, icon: "roundRect", textStyle: { color: T.ink2, fontSize: 12 } },
+    ...extra,
+  };
+}
+const barLegend = { itemWidth: 10, itemHeight: 10, icon: "roundRect" };
+const xCat = (data, extra = {}) => ({
+  type: "category", data, boundaryGap: extra.boundaryGap ?? true, axisLine: { lineStyle: { color: T.axis } }, axisTick: { show: false },
+  axisLabel: { color: T.muted, fontSize: 11, hideOverlap: true }, ...extra,
+});
+const yVal = (extra = {}) => ({
+  type: "value", splitLine: { lineStyle: { color: T.line, type: "solid" } }, axisLine: { show: false }, axisTick: { show: false },
+  axisLabel: { color: T.muted, fontSize: 11 }, nameTextStyle: { color: T.muted, fontSize: 11 }, ...extra,
+});
+const line = (name, data, color, extra = {}) => ({
+  type: "line", name, data, symbol: "circle", symbolSize: 8, showSymbol: false, connectNulls: false,
+  lineStyle: { width: 2, color, cap: "round", join: "round" }, itemStyle: { color, borderColor: T.surface, borderWidth: 2 }, emphasis: { disabled: true }, ...extra,
+});
+const bar = (name, data, color, extra = {}) => ({
+  type: "bar", name, data, barMaxWidth: 24, itemStyle: { color, borderRadius: [4, 4, 0, 0] }, emphasis: { itemStyle: { opacity: 0.85 } }, ...extra,
+});
+const vline = (x, label) => ({ xAxis: x, label: { formatter: label, position: "insideEndTop", color: T.ink2, fontSize: 10.5, fontFamily: FONT }, lineStyle: { color: T.muted, width: 1, type: "solid" } });
+const markLines = (items) => ({ symbol: "none", silent: true, animation: false, data: items });
+
+function row(color, name, value, key = "line") {
+  const k = key === "dot"
+    ? `<i style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${color}"></i>`
+    : `<i style="display:inline-block;width:12px;height:3px;border-radius:2px;background:${color}"></i>`;
+  return `<div style="display:flex;justify-content:space-between;gap:18px;align-items:center;line-height:1.7">
+    <span style="display:inline-flex;align-items:center;gap:7px;color:${T.ink2}">${k}${esc(name)}</span><b style="color:${T.ink};font-weight:600">${esc(value)}</b></div>`;
+}
+const head = (s) => `<div style="font-weight:600;color:${T.ink};margin-bottom:2px">${esc(s)}</div>`;
+function axisTip(fmt, key = "line") {
+  return (ps) => {
+    ps = Array.isArray(ps) ? ps : [ps];
+    let h = head(ps[0].axisValueLabel ?? ps[0].name);
+    for (const p of ps) {
+      const v = Array.isArray(p.value) ? p.value[p.value.length - 1] : p.value;
+      if (v == null || p.seriesType === "custom") continue;
+      h += row(p.color, p.seriesName, fmt(v, p), key);
+    }
+    return h;
+  };
+}
+
+// ---------- chart registry ----------
+const REG = {};
+const live = new Map();
+
+function register(id, option, table, opts = {}) { REG[id] = { option, table, ...opts }; }
+
+function setupCard(fig) {
+  const id = fig.dataset.chart;
+  const title = $("h3", fig)?.textContent ?? id;
+  const chart = el("div", { class: "chart", role: "img", "aria-label": `${title} chart. Use the Table button for the underlying values.` });
+  if (REG[id]?.height) chart.style.blockSize = `${REG[id].height}px`;
+  const tableBox = el("div", { class: "table-view", hidden: "" });
+  const tBtn = el("button", { class: "ghost", type: "button", "aria-pressed": "false" });
+  tBtn.innerHTML = '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10"/></svg>';
+  tBtn.append(document.createTextNode("Table"));
+  const cBtn = el("button", { class: "ghost", type: "button" });
+  cBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>';
+  cBtn.append(document.createTextNode("CSV"));
+  const actions = el("div", { class: "card-actions" }, tBtn, cBtn);
+  fig.append(chart, tableBox, actions);
+  tBtn.addEventListener("click", () => {
+    const open = tBtn.getAttribute("aria-pressed") === "true";
+    tBtn.setAttribute("aria-pressed", String(!open));
+    if (open) tableBox.hidden = true;
+    else { tableBox.replaceChildren(buildTable(REG[id].table())); tableBox.hidden = false; }
+  });
+  cBtn.addEventListener("click", () => downloadCsv(REG[id].table(), `voltrelay-${id}.csv`));
+  return chart;
+}
+
+function render(id) {
+  const fig = $(`[data-chart="${id}"]`);
+  if (!fig || !REG[id]) return;
+  const node = $(".chart", fig);
+  live.get(id)?.inst.dispose();
+  const inst = echarts.init(node, null, { renderer: "svg" });
+  inst.setOption(REG[id].option());
+  live.set(id, { inst });
+  const box = $(".table-view", fig);
+  if (!box.hidden) box.replaceChildren(buildTable(REG[id].table()));
+}
+const refresh = (...ids) => ids.forEach((id) => live.has(id) && render(id));
+
+function buildTable({ cols, rows }) {
+  const t = el("table");
+  const thead = el("thead"), tr = el("tr");
+  cols.forEach((c) => tr.append(el("th", { class: c.num ? "num" : "", text: c.label })));
+  thead.append(tr);
+  const tb = el("tbody");
+  rows.forEach((r) => {
+    const row = el("tr");
+    cols.forEach((c) => row.append(el("td", { class: c.num ? "num" : "", text: c.fmt ? c.fmt(r[c.key], r) : r[c.key] ?? "–" })));
+    tb.append(row);
+  });
+  t.append(thead, tb);
+  return t;
+}
+function downloadCsv({ cols, rows }, name) {
+  const q = (v) => (/[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v ?? ""));
+  const text = [cols.map((c) => q(c.label)).join(","), ...rows.map((r) => cols.map((c) => q(r[c.key])).join(","))].join("\n");
+  const a = el("a", { href: URL.createObjectURL(new Blob([text], { type: "text/csv" })), download: name });
+  document.body.append(a); a.click(); a.remove();
+}
+
+// ================= DATA PREP =================
+const M = D.monthly_network;
+const months = M.map((r) => mLabel(r.month));
+const CITIES = [...new Set(D.monthly_city.map((r) => r.city))].sort();
+const state = { cities: new Set(CITIES), pack: "2W_2.1kWh", factor: D.retention_lifts[0].factor };
+
+// ================= KPIs =================
+function kpis() {
+  const avg = (rows, k) => rows.reduce((a, r) => a + r[k], 0) / rows.length;
+  const q1 = M.slice(0, 3), q6 = M.slice(-3);
+  const items = [
+    { label: "Completed swaps / month", key: "completed", fmt: (v) => compact(v), good: true, ratio: true },
+    { label: "Revenue / month", key: "revenue", fmt: (v) => `₹${compact(v)}`, good: true, ratio: true },
+    { label: "Service failures / month", key: "failures", fmt: (v) => compact(v), good: false, ratio: true },
+    { label: "Contribution / swap after wear", key: "per_swap_cm2", fmt: (v) => inr(v), good: true, ratio: false },
+  ];
+  const grid = $("#kpis");
+  for (const it of items) {
+    const a = avg(q1, it.key), b = avg(q6, it.key);
+    const up = b > a;
+    const deltaText = it.ratio ? `${(b / a).toFixed(1)}× vs Q1 2024` : `${inr(b - a)} vs Q1 2024`.replace("₹", up ? "+₹" : "₹");
+    const cls = up === it.good ? "up-good" : "up-bad";
+    const arrow = up ? '<svg viewBox="0 0 12 12"><path d="M6 10V2M2.5 5.5 6 2l3.5 3.5"/></svg>' : '<svg viewBox="0 0 12 12"><path d="M6 2v8M2.5 6.5 6 10l3.5-3.5"/></svg>';
+    const vals = M.map((r) => r[it.key]);
+    const min = Math.min(...vals), max = Math.max(...vals);
+    const pts = vals.map((v, i) => `${(i / (vals.length - 1)) * 92 + 2},${30 - ((v - min) / (max - min || 1)) * 26}`).join(" ");
+    const last = pts.split(" ").pop().split(",");
+    const valueEl = el("span", { class: "kpi-value", text: it.fmt(b) });
+    const delta = el("span", { class: `delta ${cls}` });
+    delta.innerHTML = arrow;
+    delta.append(document.createTextNode(deltaText));
+    const spark = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    spark.setAttribute("class", "spark"); spark.setAttribute("viewBox", "0 0 96 32"); spark.setAttribute("aria-hidden", "true");
+    spark.innerHTML = `<polyline points="${pts}" fill="none" stroke="var(--muted)" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+      <circle cx="${last[0]}" cy="${last[1]}" r="3" fill="var(--s1)" stroke="var(--surface)" stroke-width="1.5"/>`;
+    grid.append(el("article", { class: "kpi reveal" }, el("span", { class: "kpi-label", text: it.label }), valueEl, el("div", { class: "kpi-foot" }, delta, spark)));
+    if (!REDUCED && it.ratio) countUp(valueEl, b, it.fmt);
+  }
+}
+function countUp(node, target, fmt) {
+  const t0 = performance.now(), dur = 1100;
+  const step = (t) => {
+    const k = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+    node.textContent = fmt(target * e);
+    if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+// ================= 01 OVERVIEW =================
+register("growth", () => {
+  const idx = (k) => M.map((r) => +((r[k] / M[0][k]) * 100).toFixed(1));
+  return base({
+    tooltip: { ...base().tooltip, trigger: "axis", axisPointer: { type: "line", lineStyle: { color: T.muted } }, formatter: axisTip((v) => v.toFixed(0)) },
+    xAxis: xCat(months, { boundaryGap: false }), yAxis: yVal({ min: 0 }),
+    series: [line("Completed swaps", idx("completed"), T.s1), line("Revenue", idx("revenue"), T.s3), line("Failures", idx("failures"), T.s2)],
+  });
+}, () => ({ cols: [{ key: "month", label: "Month" }, { key: "completed", label: "Completed", num: true }, { key: "revenue", label: "Revenue ₹", num: true, fmt: (v) => int(v) }, { key: "failures", label: "Failures", num: true }], rows: M }));
+
+register("failrate", () => base({
+  tooltip: { ...base().tooltip, trigger: "axis", axisPointer: { type: "line", lineStyle: { color: T.muted } }, formatter: axisTip((v) => pct(v)) },
+  legend: { show: false },
+  xAxis: xCat(months, { boundaryGap: false }), yAxis: yVal({ axisLabel: { color: T.muted, fontSize: 11, formatter: (v) => pct(v, 0) } }),
+  series: [line("Failure rate", M.map((r) => r.failure_rate), T.s1, {
+    showSymbol: true, areaStyle: { color: T.s1, opacity: 0.1 },
+    markArea: { silent: true, itemStyle: { color: T.wash }, label: { color: T.muted, fontSize: 10.5, position: "insideBottom" },
+      data: [[{ name: "Summer", xAxis: "Apr 24" }, { xAxis: "Jun 24" }], [{ name: "Summer", xAxis: "Apr 25" }, { xAxis: "Jun 25" }]] },
+  })],
+}), () => ({ cols: [{ key: "month", label: "Month" }, { key: "attempts", label: "Attempts", num: true }, { key: "failures", label: "Failures", num: true }, { key: "failure_rate", label: "Failure rate", num: true, fmt: (v) => pct(v) }], rows: M }));
+
+register("margin", () => base({
+  tooltip: { ...base().tooltip, trigger: "axis", axisPointer: { type: "line", lineStyle: { color: T.muted } }, formatter: axisTip((v) => inr(v)) },
+  xAxis: xCat(months, { boundaryGap: false }), yAxis: yVal({ axisLabel: { color: T.muted, fontSize: 11, formatter: (v) => `₹${v}` } }),
+  series: [
+    line("Before battery wear (CM1)", M.map((r) => +r.per_swap_cm1.toFixed(2)), T.s1, {
+      markLine: markLines([vline("Jul 24", "Price rise"), vline("Sep 24", "Kyron lots"), vline("Nov 24", "ZipDrop 28%")]) }),
+    line("After battery wear (CM2)", M.map((r) => +r.per_swap_cm2.toFixed(2)), T.s2, {
+      markLine: markLines([{ yAxis: 0, label: { show: false }, lineStyle: { color: T.axis, width: 1, type: "solid" } }]) }),
+  ],
+}), () => ({ cols: [{ key: "month", label: "Month" }, { key: "per_swap_cm1", label: "CM1 ₹/swap", num: true, fmt: (v) => v.toFixed(2) }, { key: "per_swap_cm2", label: "CM2 ₹/swap", num: true, fmt: (v) => v.toFixed(2) }], rows: M }));
+
+register("coststack", () => {
+  const s = (name, key, color) => bar(name, M.map((r) => +r[key].toFixed(2)), color, { stack: "cost", itemStyle: { color, borderColor: T.surface, borderWidth: 1, borderRadius: 0 } });
+  const series = [s("Energy", "per_swap_energy_cost_inr", T.s1), s("Station fixed", "per_swap_fixed_per_swap", T.s3), s("Battery wear", "per_swap_wear_inr", T.s2)];
+  series[2].itemStyle.borderRadius = [4, 4, 0, 0];
+  series.push(line("Revenue per swap", M.map((r) => +r.per_swap_amount_charged_inr.toFixed(2)), T.ink, { showSymbol: true, symbolSize: 6 }));
+  return base({
+    legend: { ...base().legend, ...barLegend },
+    tooltip: { ...base().tooltip, trigger: "axis", axisPointer: { type: "shadow", shadowStyle: { color: T.wash } }, formatter: axisTip((v) => inr(v), "dot") },
+    xAxis: xCat(months), yAxis: yVal({ axisLabel: { color: T.muted, fontSize: 11, formatter: (v) => `₹${v}` } }), series,
+  });
+}, () => ({ cols: [{ key: "month", label: "Month" }, { key: "per_swap_amount_charged_inr", label: "Revenue", num: true, fmt: (v) => v.toFixed(2) },
+  { key: "per_swap_energy_cost_inr", label: "Energy", num: true, fmt: (v) => v.toFixed(2) }, { key: "per_swap_fixed_per_swap", label: "Station fixed", num: true, fmt: (v) => v.toFixed(2) },
+  { key: "per_swap_wear_inr", label: "Battery wear", num: true, fmt: (v) => v.toFixed(2) }], rows: M }));
+
+// ================= 02 FAILURES =================
+const mcRows = () => D.monthly_city.filter((r) => state.cities.has(r.city));
+register("heatmap", () => {
+  const cities = CITIES.filter((c) => state.cities.has(c)).reverse();
+  const data = mcRows().map((r) => [mLabel(r.month), r.city, +r.failure_rate.toFixed(4)]);
+  const vals = D.monthly_city.map((r) => r.failure_rate);
+  return base({
+    grid: { left: 4, right: 70, top: 8, bottom: 4, containLabel: true },
+    tooltip: { ...base().tooltip, formatter: (p) => head(`${p.value[1]} · ${p.value[0]}`) + row(T.s1, "Failure rate", pct(p.value[2]), "dot") },
+    xAxis: xCat(months, { splitArea: { show: false } }), yAxis: { ...xCat(cities), axisLine: { show: false } },
+    visualMap: { min: Math.min(...vals), max: Math.max(...vals), calculable: false, orient: "vertical", right: 0, top: "middle", itemHeight: 160, itemWidth: 10,
+      inRange: { color: T.ramp }, text: ["high", "low"], textStyle: { color: T.muted, fontSize: 11 }, formatter: (v) => pct(v, 0) },
+    series: [{ type: "heatmap", data, itemStyle: { borderColor: T.surface, borderWidth: 2, borderRadius: 3 }, emphasis: { itemStyle: { borderColor: T.ink, borderWidth: 1 } } }],
+  });
+}, () => ({ cols: [{ key: "month", label: "Month" }, { key: "city", label: "City" }, { key: "attempts", label: "Attempts", num: true }, { key: "failure_rate", label: "Failure rate", num: true, fmt: (v) => pct(v) }], rows: mcRows() }), { height: 300 });
+
+register("hourly", () => {
+  const hrs = [...Array(24).keys()].map((h) => `${h}:00`);
+  const s = (vc, color) => line(vc, [...Array(24).keys()].map((h) => D.hourly_failure.find((r) => r.hour === h && r.vehicle_class === vc)?.failure_rate), color, { showSymbol: true, symbolSize: 6 });
+  const a = s("2W", T.s1);
+  a.markArea = { silent: true, itemStyle: { color: T.wash }, label: { color: T.muted, fontSize: 10.5 }, data: [[{ name: "Evening peak", xAxis: "19:00" }, { xAxis: "22:00" }]] };
+  return base({
+    tooltip: { ...base().tooltip, trigger: "axis", axisPointer: { type: "line", lineStyle: { color: T.muted } }, formatter: axisTip((v) => pct(v)) },
+    xAxis: xCat(hrs, { boundaryGap: false }), yAxis: yVal({ axisLabel: { color: T.muted, fontSize: 11, formatter: (v) => pct(v, 0) } }), series: [a, s("3W", T.s2)],
+  });
+}, () => ({ cols: [{ key: "hour", label: "Hour" }, { key: "vehicle_class", label: "Class" }, { key: "attempts", label: "Attempts", num: true }, { key: "failure_rate", label: "Failure rate", num: true, fmt: (v) => pct(v) }], rows: D.hourly_failure }));
+
+const OUTCOMES = [["failed_no_charged_battery", "No charged battery"], ["abandoned_queue", "Abandoned in queue"], ["cancelled_by_rider", "Cancelled by rider"], ["failed_system_error", "System error"]];
+register("eventmix", () => {
+  const cols = [T.s1, T.s2, T.s3, T.s4];
+  const series = OUTCOMES.map(([k, name], i) => bar(name, D.event_mix_monthly.map((r) => +r[k].toFixed(4)), cols[i], { stack: "mix", itemStyle: { color: cols[i], borderColor: T.surface, borderWidth: 1, borderRadius: 0 } }));
+  series[3].itemStyle.borderRadius = [4, 4, 0, 0];
+  return base({
+    legend: { ...base().legend, ...barLegend },
+    tooltip: { ...base().tooltip, trigger: "axis", axisPointer: { type: "shadow", shadowStyle: { color: T.wash } }, formatter: axisTip((v) => pct(v, 2), "dot") },
+    xAxis: xCat(months), yAxis: yVal({ axisLabel: { color: T.muted, fontSize: 11, formatter: (v) => pct(v, 0) } }), series,
+  });
+}, () => ({ cols: [{ key: "month", label: "Month" }, ...OUTCOMES.map(([k, n]) => ({ key: k, label: n, num: true, fmt: (v) => pct(v, 2) }))], rows: D.event_mix_monthly }));
+
+// ---- map + worst stations ----
+let map, tiles, markers = [];
+function tileUrl() { return `https://{s}.basemaps.cartocdn.com/${isDark() ? "dark_all" : "rastertiles/voyager"}/{z}/{x}/{y}{r}.png`; }
+function initMap() {
+  if (!window.L) return;
+  map = L.map("station-map", { scrollWheelZoom: false, zoomControl: true, attributionControl: true });
+  tiles = L.tileLayer(tileUrl(), { maxZoom: 14, subdomains: "abcd", attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>' }).addTo(map);
+  drawMarkers();
+  const lg = $("#map-legend");
+  lg.replaceChildren(...Object.entries(GEN()).map(([g, c]) => el("span", {}, el("i", { class: "swatch", style: `background:${c}` }), `${g} cabinets`)),
+    el("span", { text: "Larger circle = higher failure rate" }));
+}
+function drawMarkers() {
+  if (!map) return;
+  markers.forEach((m) => m.remove());
+  const rows = D.stations.filter((s) => state.cities.has(s.city));
+  const gen = GEN();
+  markers = rows.map((s) => {
+    const tip = el("div", {}, el("strong", { text: s.station_id }), el("br"),
+      document.createTextNode(`${s.city} · ${s.charger_generation} · ${s.location_type.replace(/_/g, " ")}`), el("br"),
+      document.createTextNode(`Failure rate ${pct(s.failure_rate_all)} · ${Math.round(s.swaps_per_day)} swaps/day`));
+    return L.circleMarker([s.latitude, s.longitude], {
+      radius: 3 + Math.max(0, s.failure_rate_all - 0.03) * 170, color: T.surface, weight: 2, fillColor: gen[s.charger_generation], fillOpacity: 0.88,
+    }).bindTooltip(tip, { direction: "top", offset: [0, -6] }).addTo(map);
+  });
+  if (rows.length) map.fitBounds(L.latLngBounds(rows.map((s) => [s.latitude, s.longitude])).pad(0.12), { animate: false });
+}
+function worstStations() {
+  const rows = D.stations.filter((s) => state.cities.has(s.city)).sort((a, b) => b.failure_rate_all - a.failure_rate_all).slice(0, 10);
+  const max = Math.max(...rows.map((r) => r.failure_rate_all), 0.01);
+  const gen = GEN();
+  const t = el("table");
+  const hr = el("tr");
+  [["Station"], ["City"], ["Gen"], ["Failure rate"], ["Swaps/day", "num"]].forEach(([l, c]) => hr.append(el("th", { class: c ?? "", text: l })));
+  t.append(el("thead", {}, hr));
+  const tb = el("tbody");
+  for (const r of rows) {
+    const bar = el("div", { class: "bar-cell" }, el("i", { style: `inline-size:${(r.failure_rate_all / max) * 80}px` }), document.createTextNode(pct(r.failure_rate_all)));
+    tb.append(el("tr", {}, el("td", { text: r.station_id }), el("td", { text: r.city }),
+      el("td", {}, el("i", { class: "swatch", style: `background:${gen[r.charger_generation]}` }), document.createTextNode(r.charger_generation)),
+      el("td", {}, bar), el("td", { class: "num", text: Math.round(r.swaps_per_day) })));
+  }
+  t.append(tb);
+  $("#worst-stations").replaceChildren(t);
+}
+function cityFilter() {
+  const box = $("#city-filter");
+  const all = el("button", { type: "button", class: "all", "aria-pressed": "true", text: "All cities" });
+  const btns = CITIES.map((c) => el("button", { type: "button", "aria-pressed": "true", "data-city": c, text: c }));
+  const sync = () => {
+    btns.forEach((b) => b.setAttribute("aria-pressed", String(state.cities.has(b.dataset.city))));
+    all.setAttribute("aria-pressed", String(state.cities.size === CITIES.length));
+    refresh("heatmap"); drawMarkers(); worstStations();
+  };
+  all.addEventListener("click", () => { state.cities = new Set(CITIES); sync(); });
+  btns.forEach((b) => b.addEventListener("click", () => {
+    const c = b.dataset.city;
+    if (state.cities.size === CITIES.length) state.cities = new Set([c]);
+    else if (state.cities.has(c)) { state.cities.delete(c); if (!state.cities.size) state.cities = new Set(CITIES); }
+    else state.cities.add(c);
+    sync();
+  }));
+  box.append(all, ...btns);
+}
+
+// ================= 03 STATIONS =================
+const BANDS = ["<25°C", "25–30", "30–35", "35–40", ">40°C"];
+const genBars = (key, fmt) => () => {
+  const gen = GEN();
+  return base({
+    legend: { ...base().legend, ...barLegend },
+    tooltip: { ...base().tooltip, trigger: "axis", axisPointer: { type: "shadow", shadowStyle: { color: T.wash } }, formatter: axisTip(fmt, "dot") },
+    xAxis: xCat(BANDS, { name: "ambient temperature", nameLocation: "middle", nameGap: 28, nameTextStyle: { color: T.muted, fontSize: 11 } }),
+    yAxis: yVal(key === "stockout_hours" ? { axisLabel: { color: T.muted, fontSize: 11, formatter: (v) => pct(v, 0) } } : {}),
+    series: ["Gen1", "Gen2", "Gen3"].map((g) => bar(g, BANDS.map((b) => D.gen_heat.find((r) => r.temp_band === b && r.charger_generation === g)?.[key]), gen[g], { barGap: "12%" })),
+  });
+};
+const genTable = () => ({ cols: [{ key: "temp_band", label: "Ambient temp" }, { key: "charger_generation", label: "Generation" },
+  { key: "charge_minutes", label: "Charge minutes", num: true, fmt: (v) => v.toFixed(1) }, { key: "stockout_hours", label: "Stockout hours", num: true, fmt: (v) => pct(v) },
+  { key: "hours", label: "Station-hours", num: true, fmt: (v) => int(v) }], rows: D.gen_heat });
+register("chargetime", genBars("charge_minutes", (v) => `${v.toFixed(0)} min`), genTable);
+register("stockout", genBars("stockout_hours", (v) => pct(v)), genTable);
+
+function waves() {
+  const names = { Launch: "Launch network", Wave1_2024H2: "Wave 1 · 2024 H2", Wave2_2025H1: "Wave 2 · 2025 H1" };
+  const box = $("#waves");
+  const maxSpd = Math.max(...Object.keys(names).map((w) => avgBy(D.stations.filter((s) => s.expansion_wave === w), "swaps_per_day")));
+  for (const [w, label] of Object.entries(names)) {
+    const rows = D.stations.filter((s) => s.expansion_wave === w);
+    const spd = avgBy(rows, "swaps_per_day"), fail = avgBy(rows, "fail_2025");
+    const counts = {};
+    rows.forEach((s) => (counts[s.location_type] = (counts[s.location_type] ?? 0) + 1));
+    const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([k, n]) => `${n} ${k.replace(/_/g, " ")}`).join(", ");
+    const gens = [...new Set(rows.map((s) => s.charger_generation))].sort().join(" + ");
+    box.append(el("div", { class: "mini reveal" }, el("span", { class: "k", text: label }), el("span", { class: "v", text: `${Math.round(spd)} swaps/day` }),
+      el("div", { class: "meter" }, el("i", { style: `inline-size:${(spd / maxSpd) * 100}%` })),
+      el("span", { class: "d", text: `${rows.length} stations · ${gens} · ${pct(fail)} failure (Mar–Jun 2025)` }), el("span", { class: "d", text: `Mostly ${top}` })));
+  }
+}
+const avgBy = (rows, k) => rows.reduce((a, r) => a + (r[k] ?? 0), 0) / Math.max(rows.length, 1);
+
+// ================= 04 BATTERIES =================
+const BAD = ["KY-2407", "KY-2408", "KY-2409"];
+register("lots", () => {
+  const lots = [...D.battery_lots].sort((a, b) => a.commissioned.localeCompare(b.commissioned));
+  return base({
+    legend: { show: false },
+    tooltip: { ...base().tooltip, trigger: "item", formatter: (p) => { const r = lots[p.dataIndex]; return head(`${r.manufacturing_lot} · ${r.supplier}`) +
+      row(p.color, "SoH lost / 100 swaps", r.loss.toFixed(2), "dot") + row(T.muted, "Packs", r.packs, "dot") + row(T.muted, "Commissioned", r.commissioned, "dot"); } },
+    xAxis: xCat(lots.map((r) => r.manufacturing_lot), { axisLabel: { color: T.muted, fontSize: 10, rotate: 60, interval: 0 } }),
+    yAxis: yVal(),
+    series: [bar("SoH lost per 100 swaps", lots.map((r) => ({ value: +r.loss.toFixed(2), itemStyle: { color: BAD.includes(r.manufacturing_lot) ? T.s2 : T.axis, borderRadius: [4, 4, 0, 0] },
+      label: BAD.includes(r.manufacturing_lot) ? { show: true, position: "top", color: T.ink, fontSize: 11, fontWeight: 600, formatter: (p) => p.value.toFixed(1) } : { show: false } })),
+    T.axis, { barMaxWidth: 14, markLine: markLines([{ yAxis: 3.05, label: { formatter: "typical lot ≈ 3.0", position: "insideEndTop", color: T.ink2, fontSize: 10.5 }, lineStyle: { color: T.muted, width: 1, type: "solid" } }]) })],
+  });
+}, () => ({ cols: [{ key: "manufacturing_lot", label: "Lot" }, { key: "supplier", label: "Supplier" }, { key: "commissioned", label: "Commissioned" },
+  { key: "packs", label: "Packs", num: true }, { key: "loss", label: "SoH lost / 100 swaps", num: true, fmt: (v) => v.toFixed(2) }], rows: D.battery_lots }), { height: 340 });
+
+const SOH = ["<70", "70–75", "75–80", "80–85", "85–90", "90–95", "95–100"];
+const COHORT_LABEL = { Cellora: "Cellora", Amptek: "Amptek", "Kyron KY-2407..09": "Kyron bad lots (KY-2407/08/09)", Kyron: "Kyron later lots" };
+register("range", () => {
+  const colors = { Cellora: T.s1, Amptek: T.s3, "Kyron KY-2407..09": T.s2, Kyron: T.muted };
+  const rows = D.range_vs_soh.filter((r) => r.pack_type === state.pack);
+  const cohorts = Object.keys(colors).filter((c) => rows.some((r) => r.cohort === c));
+  return base({
+    tooltip: { ...base().tooltip, trigger: "axis", axisPointer: { type: "line", lineStyle: { color: T.muted } }, formatter: axisTip((v) => `${v.toFixed(1)} km`) },
+    xAxis: xCat(SOH, { boundaryGap: false, name: "SoH of returned pack (%)", nameLocation: "middle", nameGap: 28, nameTextStyle: { color: T.muted, fontSize: 11 } }),
+    yAxis: yVal({ scale: true }),
+    series: cohorts.map((c) => line(COHORT_LABEL[c], SOH.map((b) => rows.find((r) => r.cohort === c && r.soh_band === b)?.mean ?? null), colors[c], { showSymbol: true })),
+  });
+}, () => ({ cols: [{ key: "pack_type", label: "Pack" }, { key: "cohort", label: "Cohort" }, { key: "soh_band", label: "SoH band" },
+  { key: "mean", label: "km per swap", num: true, fmt: (v) => v.toFixed(1) }, { key: "size", label: "Swaps", num: true, fmt: (v) => int(v) }], rows: D.range_vs_soh.filter((r) => r.pack_type === state.pack) }));
+
+register("fleet", () => {
+  const F = D.fleet_monthly;
+  return base({
+    tooltip: { ...base().tooltip, trigger: "axis", axisPointer: { type: "line", lineStyle: { color: T.muted } }, formatter: axisTip((v) => v.toFixed(1)) },
+    xAxis: xCat(F.map((r) => mLabel(r.month)), { boundaryGap: false }), yAxis: yVal({ scale: true }),
+    series: [line("km delivered per swap", F.map((r) => +((r.km / F[0].km) * 100).toFixed(1)), T.s1),
+      line("Mean SoH of returned packs", F.map((r) => +((r.soh / F[0].soh) * 100).toFixed(1)), T.s2)],
+  });
+}, () => ({ cols: [{ key: "month", label: "Month" }, { key: "km", label: "km per swap", num: true, fmt: (v) => v.toFixed(1) }, { key: "soh", label: "Mean SoH %", num: true, fmt: (v) => v.toFixed(1) },
+  { key: "bad_lot_share", label: "Bad-lot share of swaps", num: true, fmt: (v) => pct(v) }], rows: D.fleet_monthly }));
+
+function batteryStats() {
+  const c = D.battery_cohorts;
+  const bad2 = c.find((r) => r.cohort === "Kyron KY-2407..09" && r.pack_type === "2W_2.1kWh");
+  const ok2 = c.filter((r) => r.pack_type === "2W_2.1kWh" && r.cohort !== "Kyron KY-2407..09");
+  const badPacks = c.filter((r) => r.cohort === "Kyron KY-2407..09").reduce((a, r) => a + r.packs, 0);
+  const share = avgBy(D.fleet_monthly.slice(-9), "bad_lot_share");
+  const stats = [
+    ["Packs in bad lots", int(badPacks), `≈${pct(share, 0)} of swaps since Oct 2024`],
+    ["SoH lost / 100 swaps", `${bad2.soh_loss_per_100_swaps.toFixed(1)} vs ${avgBy(ok2, "soh_loss_per_100_swaps").toFixed(1)}`, "bad 2W lots vs other 2W packs"],
+    ["Wear cost per 2W swap", `${inr(bad2.wear_inr_per_swap, 0)} vs ${inr(avgBy(ok2, "wear_inr_per_swap"), 0)}`, "bad lots vs other 2W packs"],
+    ["Excess wear, 18 months", "≈ ₹45M", "≈ ₹12 on every swap in the network"],
+  ];
+  $("#battery-stats").replaceChildren(...stats.map(([k, v, d]) => el("div", { class: "mini reveal" }, el("span", { class: "k", text: k }), el("span", { class: "v", text: v }), el("span", { class: "d", text: d }))));
+}
+
+// ================= 05 PRICING =================
+register("pilot", () => {
+  const W = D.pilot_weekly.slice(1, -1);
+  const weeks = W.map((r) => wLabel(r.week));
+  const start = weeks[W.findIndex((r) => r.week >= "2024-09-30")];
+  return base({
+    tooltip: { ...base().tooltip, trigger: "axis", axisPointer: { type: "line", lineStyle: { color: T.muted } }, formatter: axisTip((v) => pct(v)) },
+    xAxis: xCat(weeks, { boundaryGap: false }), yAxis: yVal({ scale: true, axisLabel: { color: T.muted, fontSize: 11, formatter: (v) => pct(v, 0) } }),
+    series: [line("Control cities", W.map((r) => r["Control cities"]), T.muted),
+      line("Pilot cities (BLR, PUN)", W.map((r) => r["Pilot cities (BLR, PUN)"]), T.s2, { markLine: markLines([vline(start, "Pilot starts 1 Oct")]) })],
+  });
+}, () => ({ cols: [{ key: "week", label: "Week" }, { key: "Control cities", label: "Control", num: true, fmt: (v) => pct(v) }, { key: "Pilot cities (BLR, PUN)", label: "Pilot", num: true, fmt: (v) => pct(v) }], rows: D.pilot_weekly }));
+
+const SEG_LABEL = { "independent (pays PEAK)": "Independents", "partner, surcharge billed": "Partners, billed", "partner, surcharge exempt": "Partners, exempt" };
+register("did", () => {
+  const outcomes = [["peak-hour share (pp)", "Change in peak-hour share (pp)", (v) => `${v.toFixed(1)} pp`], ["revenue per swap (₹)", "Change in revenue per swap (₹)", (v) => inr(v)]];
+  const segs = Object.keys(SEG_LABEL);
+  const grids = [{ left: 4, right: "54%", top: 30, bottom: 4, containLabel: true }, { left: "54%", right: 12, top: 30, bottom: 4, containLabel: true }];
+  const series = [];
+  outcomes.forEach(([key, , fmt], gi) => {
+    const rows = segs.map((s) => D.pilot_did.find((r) => r.segment === s && r.outcome === key));
+    series.push({ type: "custom", xAxisIndex: gi, yAxisIndex: gi, silent: true, data: rows.map((r, i) => [i, r["CI low"], r["CI high"]]),
+      renderItem: (params, api) => { const a = api.coord([api.value(1), api.value(0)]), b = api.coord([api.value(2), api.value(0)]);
+        return { type: "line", shape: { x1: a[0], y1: a[1], x2: b[0], y2: b[1] }, style: { stroke: T.muted, lineWidth: 2, lineCap: "round" } }; } });
+    series.push({ type: "scatter", xAxisIndex: gi, yAxisIndex: gi, name: key, symbolSize: 12, data: rows.map((r, i) => [r["DiD estimate"], i]),
+      itemStyle: { color: gi ? T.s1 : T.s2, borderColor: T.surface, borderWidth: 2 },
+      label: { show: true, position: "top", distance: 8, color: T.ink, fontSize: 11, fontWeight: 600, formatter: (p) => fmt(p.value[0]) },
+      markLine: markLines([{ xAxis: 0, label: { show: false }, lineStyle: { color: T.axis, width: 1, type: "solid" } }]) });
+  });
+  return base({
+    grid: grids,
+    legend: { show: false },
+    title: outcomes.map(([, t], i) => ({ text: t, left: i ? "54%" : 4, top: 0, textStyle: { fontSize: 12, fontWeight: 500, color: T.ink2, fontFamily: FONT } })),
+    tooltip: { ...base().tooltip, trigger: "item", formatter: (p) => { const key = outcomes[p.seriesIndex >> 1][0]; const r = D.pilot_did.find((x) => x.segment === segs[p.value[1]] && x.outcome === key);
+      return head(SEG_LABEL[r.segment]) + row(p.color, "Estimate", outcomes[p.seriesIndex >> 1][2](r["DiD estimate"]), "dot") + row(T.muted, "95% CI", `${r["CI low"].toFixed(2)} to ${r["CI high"].toFixed(2)}`, "dot") + row(T.muted, "p-value", r.p < 0.001 ? "< 0.001" : r.p.toFixed(3), "dot"); } },
+    xAxis: [yVal({ type: "value", gridIndex: 0 }), yVal({ type: "value", gridIndex: 1 })],
+    yAxis: [{ ...xCat(segs.map((s) => SEG_LABEL[s])), gridIndex: 0, axisLine: { show: false } }, { ...xCat(segs.map(() => "")), gridIndex: 1, axisLine: { show: false }, axisLabel: { show: false } }],
+    series,
+  });
+}, () => ({ cols: [{ key: "segment", label: "Segment" }, { key: "outcome", label: "Outcome" }, { key: "DiD estimate", label: "Estimate", num: true, fmt: (v) => v.toFixed(2) },
+  { key: "CI low", label: "CI low", num: true, fmt: (v) => v.toFixed(2) }, { key: "CI high", label: "CI high", num: true, fmt: (v) => v.toFixed(2) }, { key: "p", label: "p", num: true, fmt: (v) => (v < 0.001 ? "<0.001" : v.toFixed(3)) }], rows: D.pilot_did }));
+
+const PARTNERS = () => D.partners.filter((p) => p.pid !== "Independent");
+register("partners", () => {
+  const P = PARTNERS();
+  const labelled = new Set(["ZipDrop", "FeastFly", "CargoTuk", "HaulKing", "ParcelNest", "Swiggle Go"]);
+  return base({
+    grid: { left: 4, right: 24, top: 20, bottom: 26, containLabel: true },
+    legend: { show: false },
+    tooltip: { ...base().tooltip, trigger: "item", formatter: (p) => { const r = P[p.dataIndex]; return head(`${r.partner_name} · ${r.partner_segment.replace(/_/g, " ")}`) +
+      row(p.color, "Swaps", int(r.swaps), "dot") + row(T.muted, "Revenue", `₹${r.revenue_m.toFixed(1)}M`, "dot") + row(T.muted, "Discount / swap", inr(r.discount_per_swap), "dot") +
+      row(T.muted, "CM1 / swap", inr(r.cm1), "dot") + row(T.muted, "CM2 / swap", inr(r.cm2), "dot") + row(T.muted, "Peak surcharge billed", r.peak_surcharge_billable === "Y" ? "Yes" : "No", "dot") +
+      row(T.muted, "Payment terms", `${r.payment_terms_days} days`, "dot"); } },
+    xAxis: yVal({ type: "value", name: "Total revenue (₹ million)", nameLocation: "middle", nameGap: 28 }),
+    yAxis: yVal({ type: "value", scale: true, axisLabel: { color: T.muted, fontSize: 11, formatter: (v) => `₹${v}` } }),
+    series: [{ type: "scatter", data: P.map((r) => ({ value: [+r.revenue_m.toFixed(2), +r.cm1.toFixed(2)], symbolSize: Math.sqrt(r.swaps) / 13,
+      itemStyle: { color: r.partner_name === "ZipDrop" ? T.s2 : T.s1, opacity: r.partner_name === "ZipDrop" ? 0.95 : 0.7, borderColor: T.surface, borderWidth: 2 },
+      label: { show: labelled.has(r.partner_name), formatter: r.partner_name, position: "right", distance: 6, color: T.ink2, fontSize: 11, fontWeight: r.partner_name === "ZipDrop" ? 700 : 400 } })),
+      emphasis: { scale: 1.08, label: { show: true } } }],
+  });
+}, () => ({ cols: [{ key: "partner_name", label: "Partner" }, { key: "swaps", label: "Swaps", num: true, fmt: (v) => int(v) }, { key: "revenue_m", label: "Revenue ₹M", num: true, fmt: (v) => v.toFixed(2) },
+  { key: "cm1", label: "CM1 ₹/swap", num: true, fmt: (v) => v.toFixed(2) }, { key: "cm2", label: "CM2 ₹/swap", num: true, fmt: (v) => v.toFixed(2) }], rows: PARTNERS() }), { height: 400 });
+
+function partnerTable() {
+  const cols = [
+    { key: "partner_name", label: "Partner" }, { key: "partner_segment", label: "Segment", fmt: (v) => (v ?? "–").replace(/_/g, " ") },
+    { key: "swaps", label: "Swaps", num: true, fmt: int }, { key: "revenue_m", label: "Revenue", num: true, fmt: (v) => `₹${v.toFixed(1)}M` },
+    { key: "discount_per_swap", label: "Discount/swap", num: true, fmt: (v) => inr(v) }, { key: "cm1", label: "CM1/swap", num: true, fmt: (v) => inr(v) },
+    { key: "cm2", label: "CM2/swap", num: true, fmt: (v) => inr(v) }, { key: "peak_share", label: "Peak share", num: true, fmt: (v) => pct(v, 0) },
+    { key: "peak_surcharge_billable", label: "Surcharge billed", fmt: (v) => (v === "Y" ? "Yes" : v === "N" ? "No" : "–") },
+    { key: "payment_terms_days", label: "Terms", num: true, fmt: (v) => (v == null ? "–" : `${v} d`) },
+  ];
+  let sort = { key: "swaps", dir: -1 };
+  const box = $("#partner-table");
+  const draw = () => {
+    const rows = [...D.partners].sort((a, b) => { const x = a[sort.key], y = b[sort.key]; return (x > y ? 1 : x < y ? -1 : 0) * sort.dir; });
+    const t = el("table"), hr = el("tr");
+    cols.forEach((c) => {
+      const b = el("button", { type: "button", text: c.label });
+      const th = el("th", { class: c.num ? "num" : "", scope: "col" }, b);
+      if (sort.key === c.key) th.setAttribute("aria-sort", sort.dir > 0 ? "ascending" : "descending");
+      b.addEventListener("click", () => { sort = { key: c.key, dir: sort.key === c.key ? -sort.dir : c.num ? -1 : 1 }; draw(); });
+      hr.append(th);
+    });
+    const tb = el("tbody");
+    rows.forEach((r) => {
+      const trEl = el("tr", { class: r.partner_name === "ZipDrop" ? "hl-row" : "" });
+      cols.forEach((c) => trEl.append(el("td", { class: c.num ? "num" : "", text: c.fmt ? c.fmt(r[c.key]) : r[c.key] ?? "–" })));
+      tb.append(trEl);
+    });
+    t.append(el("thead", {}, hr), tb);
+    box.replaceChildren(t);
+  };
+  draw();
+}
+
+// ================= 06 RETENTION =================
+register("cohort", () => {
+  const C = D.cohort_retention;
+  const x = C.map((r) => mLabel(r.first_month));
+  return base({
+    grid: [{ left: 4, right: 18, top: 34, height: "46%", containLabel: true }, { left: 4, right: 18, top: "66%", bottom: 4, containLabel: true }],
+    axisPointer: { link: [{ xAxisIndex: "all" }] },
+    tooltip: { ...base().tooltip, trigger: "axis", axisPointer: { type: "line", lineStyle: { color: T.muted } }, formatter: axisTip((v) => pct(v)) },
+    legend: { ...base().legend, data: [{ name: "30–59 day retention" }, { name: "Failure rate, first 14 days", ...barLegend }] },
+    xAxis: [xCat(x, { gridIndex: 0, axisLabel: { show: false } }), xCat(x, { gridIndex: 1 })],
+    yAxis: [yVal({ gridIndex: 0, scale: true, axisLabel: { color: T.muted, fontSize: 11, formatter: (v) => pct(v, 0) } }),
+      yVal({ gridIndex: 1, axisLabel: { color: T.muted, fontSize: 11, formatter: (v) => pct(v, 0) }, splitNumber: 2 })],
+    series: [line("30–59 day retention", C.map((r) => r.retention), T.s1, { showSymbol: true, xAxisIndex: 0, yAxisIndex: 0 }),
+      bar("Failure rate, first 14 days", C.map((r) => r.early_fail), T.s2, { xAxisIndex: 1, yAxisIndex: 1, barMaxWidth: 18 })],
+  });
+}, () => ({ cols: [{ key: "first_month", label: "First swap month" }, { key: "riders", label: "New riders", num: true }, { key: "retention", label: "Retention", num: true, fmt: (v) => pct(v) },
+  { key: "early_fail", label: "Early failure rate", num: true, fmt: (v) => pct(v) }, { key: "early_km", label: "Early km/swap", num: true, fmt: (v) => v.toFixed(1) }], rows: D.cohort_retention }), { height: 380 });
+
+const liftRows = () => D.retention_lifts.filter((r) => r.factor === state.factor);
+register("lift", () => {
+  const rows = liftRows();
+  const overall = 0.854;
+  return base({
+    legend: { show: false },
+    tooltip: { ...base().tooltip, trigger: "item", formatter: (p) => { const r = rows[p.dataIndex]; return head(`${state.factor}: ${r.level}`) + row(T.s1, "Retention", pct(r.retention), "dot") + row(T.muted, "Riders", int(r.riders), "dot"); } },
+    xAxis: xCat(rows.map((r) => String(r.level).replace(/_/g, " "))),
+    yAxis: yVal({ min: 0, max: 1, axisLabel: { color: T.muted, fontSize: 11, formatter: (v) => pct(v, 0) } }),
+    series: [bar("Retention", rows.map((r) => r.retention), T.s1, {
+      label: { show: true, position: "top", color: T.ink, fontSize: 11, fontWeight: 600, formatter: (p) => pct(p.value, 0) },
+      markLine: markLines([{ yAxis: overall, label: { formatter: "all new riders 85%", position: "insideEndTop", color: T.ink2, fontSize: 10.5 }, lineStyle: { color: T.muted, width: 1, type: "solid" } }]) })],
+  });
+}, () => ({ cols: [{ key: "factor", label: "Factor" }, { key: "level", label: "Level" }, { key: "riders", label: "Riders", num: true, fmt: int }, { key: "retention", label: "Retention", num: true, fmt: (v) => pct(v) }], rows: liftRows() }));
+
+function termLabel(t) {
+  const m = {
+    fail_rate_14d_z: "Early failure rate (per SD)", km_per_swap_14d_z: "Early km per swap (per SD)", soh_14d_z: "Early pack SoH (per SD)", bad_lot_share_14d_z: "Bad-lot share of packs (per SD)",
+    price_14d_z: "Price paid (per SD)", peak_tariff_share_14d_z: "Peak-tariff exposure (per SD)", tickets_30d_z: "Tickets raised (per SD)", competitor_promo_days_30d_z: "Competitor promo days (per SD)",
+    first_attempt_failed: "First attempt failed", competitor_nearby: "Competitor within 1.5 km", "kyc_verified[T.True]": "KYC verified",
+  };
+  if (m[t]) return m[t];
+  const lvl = (t.match(/\[T\.(.+)\]$/) ?? [])[1] ?? t;
+  if (t.includes("vehicle_class")) return `${lvl} vehicle (vs 2W)`;
+  if (t.includes("plan_type")) return `${lvl.replace(/_/g, " ")} plan (vs partner-billed)`;
+  if (t.includes("signup_channel")) return `Signup: ${lvl.replace(/_/g, " ")} (vs app store)`;
+  if (t.includes("home_city")) return `${lvl} (vs Bengaluru)`;
+  if (t.includes("home_station_gen")) return `Home station ${lvl} (vs Gen2)`;
+  return t;
+}
+const logitRows = () => D.retention_logit.filter((r) => !r.term.startsWith("attempts_14d")).sort((a, b) => a.coef - b.coef);
+register("logit", () => {
+  const rows = logitRows();
+  const cats = rows.map((r) => termLabel(r.term));
+  return base({
+    grid: { left: 4, right: 18, top: 10, bottom: 26, containLabel: true },
+    legend: { show: false },
+    tooltip: { ...base().tooltip, trigger: "item", formatter: (p) => { const r = rows[p.value[1]]; if (!r) return ""; return head(termLabel(r.term)) +
+      row(p.color, "Coefficient", r.coef.toFixed(3), "dot") + row(T.muted, "Odds ratio", r.odds_ratio.toFixed(2), "dot") + row(T.muted, "95% CI", `${r.lo.toFixed(2)} to ${r.hi.toFixed(2)}`, "dot") +
+      row(T.muted, "p-value", r.p < 0.001 ? "< 0.001" : r.p.toFixed(3), "dot"); } },
+    xAxis: yVal({ type: "value", name: "effect on log-odds of retention", nameLocation: "middle", nameGap: 28 }),
+    yAxis: { ...xCat(cats), axisLine: { show: false }, axisLabel: { color: T.ink2, fontSize: 11, interval: 0 } },
+    series: [
+      { type: "custom", silent: true, data: rows.map((r, i) => [i, r.lo, r.hi, r.p < 0.05 ? 1 : 0]),
+        renderItem: (params, api) => { const a = api.coord([api.value(1), api.value(0)]), b = api.coord([api.value(2), api.value(0)]);
+          return { type: "line", shape: { x1: a[0], y1: a[1], x2: b[0], y2: b[1] }, style: { stroke: api.value(3) ? T.s2 : T.axis, lineWidth: 2, lineCap: "round" } }; } },
+      { type: "scatter", symbolSize: 10, data: rows.map((r, i) => ({ value: [+r.coef.toFixed(3), i], itemStyle: { color: r.p < 0.05 ? T.s2 : T.muted, borderColor: T.surface, borderWidth: 2 } })),
+        markLine: markLines([{ xAxis: 0, label: { show: false }, lineStyle: { color: T.ink2, width: 1, type: "solid" } }]) },
+    ],
+  });
+}, () => ({ cols: [{ key: "term", label: "Term", fmt: (v) => termLabel(v) }, { key: "coef", label: "Coef", num: true, fmt: (v) => v.toFixed(3) }, { key: "lo", label: "CI low", num: true, fmt: (v) => v.toFixed(3) },
+  { key: "hi", label: "CI high", num: true, fmt: (v) => v.toFixed(3) }, { key: "p", label: "p", num: true, fmt: (v) => (v < 0.001 ? "<0.001" : v.toFixed(3)) }], rows: logitRows() }), { height: 520 });
+
+function factorSelect() {
+  const sel = $("#factor-select");
+  [...new Set(D.retention_lifts.map((r) => r.factor))].forEach((f) => sel.append(el("option", { value: f, text: f })));
+  sel.addEventListener("change", () => { state.factor = sel.value; refresh("lift"); });
+}
+
+// ================= 07 ACTIONS =================
+const X = '<svg viewBox="0 0 12 12"><path d="M3 3l6 6M9 3 3 9"/></svg>';
+const HALF = '<svg viewBox="0 0 12 12"><circle cx="6" cy="6" r="4.2"/><path d="M6 1.8v8.4"/></svg>';
+const VERDICTS = [
+  { title: "More stations", tag: "Not as proposed", kind: "no", icon: X, ev: "Failures aren't a network-wide capacity gap: Gen1 cabinets alone cause ~35K excess failures, 94% of them in three hot cities. Wave 1 went to low-demand sites.",
+    instead: "Upgrade or cool the 36 hot-city Gen1 cabinets first; add sites only where they saturate." },
+  { title: "More batteries", tag: "Replace, don't expand", kind: "partial", icon: HALF, ev: "Gen1 stockouts are a charging-speed problem, so extra packs in a hot cabinet don't help. But 1,461 bad-lot packs (~22% of swaps) need replacing.",
+    instead: "Replace the Kyron bad lots under warranty; retire packs below ~75% SoH sooner." },
+  { title: "Network-wide pricing", tag: "Targeted only", kind: "partial", icon: HALF, ev: "The pilot earns ₹6–8 more per exposed swap and shifts ~3 pp of demand, but gave no reliability gain, and peak exposure slightly lowers new-rider retention.",
+    instead: "Peak pricing at congested hot-city hubs in summer; 30-day grace period for new riders." },
+  { title: "Exclusive with ZipDrop", tag: "Do not lock in", kind: "no", icon: X, ev: "Largest partner, least profitable 2W partner: 28% discount, exempt from the peak surcharge, 45-day terms. The Nov 2024 amendment costs ~₹5.5M a year.",
+    instead: "Renegotiate: discount floor, surcharge billing, 30-day terms. Grow higher-margin partners." },
+];
+const PLAN = [
+  ["Upgrade or cool the 36 hot-city Gen1 cabinets before April 2026", "Pre-position charged stock at those sites in April–June. Targets ~35K excess failures and protects summer new-rider cohorts.", ["Failures", "Retention"]],
+  ["Replace the bad Kyron lots and claim warranty", "Add an SoH retirement threshold (~75%) and fix the asset ledger. Saves ≈ ₹12 of wear on every swap and restores range.", ["Margin", "Range"]],
+  ["Renegotiate ZipDrop; no exclusivity", "Discount floor, peak-surcharge billing, 30-day payment terms. Recovers ~₹5.5M a year.", ["Margin"]],
+  ["Protect every new rider's first 14 days", "Route new riders to reliable stations and healthy packs, and follow up after any failed first attempt.", ["Retention"]],
+  ["Targeted peak pricing, not a network-wide rollout", "Keeps the ₹6–8 per swap revenue gain where it also relieves real congestion.", ["Revenue"]],
+  ["Fix the data plumbing", "Cabinet clock sync, pack-ID capture, test-station revenue reconciliation, and ticket re-classification from rider text.", ["Data quality"]],
+];
+function actions() {
+  $("#verdicts").replaceChildren(...VERDICTS.map((v) => {
+    const tag = el("span", { class: `verdict-tag ${v.kind}` }); tag.innerHTML = v.icon; tag.append(document.createTextNode(v.tag));
+    const instead = el("p", { class: "instead" }, el("strong", { text: "Instead: " }), document.createTextNode(v.instead));
+    return el("article", { class: "verdict reveal" }, tag, el("h3", { text: v.title }), el("p", { class: "ev", text: v.ev }), instead);
+  }));
+  $("#plan").replaceChildren(...PLAN.map(([h, p, tags]) => el("li", { class: "reveal" }, el("h4", { text: h }),
+    el("div", {}, el("p", { text: p }), el("div", { class: "tags" }, ...tags.map((t) => el("span", { class: "pill", text: t })))))));
+}
+
+// ================= 08 QUALITY =================
+register("tickets", () => {
+  const Q = D.ticket_themes_quarterly.filter((r) => r.quarter >= "2024Q1" && r.quarter <= "2025Q2");
+  const other = Q.map((r) => r.app + r.billing + r.queue);
+  return base({
+    tooltip: { ...base().tooltip, trigger: "axis", axisPointer: { type: "line", lineStyle: { color: T.muted } }, formatter: axisTip((v) => int(v)) },
+    xAxis: xCat(Q.map((r) => r.quarter.replace("Q", " Q")), { boundaryGap: false }), yAxis: yVal(),
+    series: [line("Range / battery", Q.map((r) => r["range / battery"]), T.s2, { showSymbol: true }),
+      line("Vague 'vehicle' complaints (filed as other)", Q.map((r) => r["vehicle 'performance' (vague)"]), T.s1, { showSymbol: true }),
+      line("Stockout", Q.map((r) => r.stockout), T.s3, { showSymbol: true }), line("App, billing, queue", other, T.muted, { showSymbol: true })],
+  });
+}, () => ({ cols: [{ key: "quarter", label: "Quarter" }, { key: "range / battery", label: "Range/battery", num: true }, { key: "vehicle 'performance' (vague)", label: "Vague vehicle", num: true },
+  { key: "stockout", label: "Stockout", num: true }, { key: "app", label: "App", num: true }, { key: "billing", label: "Billing", num: true }, { key: "queue", label: "Queue", num: true }], rows: D.ticket_themes_quarterly }), { height: 340 });
+
+function quality() {
+  $("#anomalies").replaceChildren(...D.anomalies.map((a) => el("article", { class: "anomaly reveal" }, el("h3", { text: a.Anomaly }), el("p", { text: a.Evidence }),
+    el("p", { class: "act" }, el("strong", { text: "Action: " }), document.createTextNode(a["Suggested action"])))));
+  const rows = [
+    ["Firmware v3.2.0 clock bug", "139,490 events logged 5h30m early; proven by PEAK tariffs at off-tariff hours", "Shifted +5h30m"],
+    ["Test stations STN-TST-01/02", "62K events and ₹3.9M revenue, not 'a few zero-value rows'", "Excluded and flagged"],
+    ["Offline-sync near-duplicates", "None present: same-rider pairs always use different packs", "Check kept, nothing removed"],
+    ["Odometer and sensor outliers", "15.3K invalid km readings; ~13K SoC/SoH readings above 100%", "Nulled or clipped"],
+    ["City spellings", "21 variants of 6 cities", "Standardised"],
+    ["Missing telemetry", "Concentrated at poor-connectivity stations", "Never zero-filled"],
+    ["CSAT", "Only recorded for resolved tickets, half as often when slow", "Not used as a KPI"],
+    ["Undocumented", "payment_mode constant; PREPAID/PROMO never used; battery IDs physically inconsistent", "Batteries analysed as cohorts"],
+  ];
+  $("#cleaning").replaceChildren(buildTable({ cols: [{ key: 0, label: "Issue" }, { key: 1, label: "What we found" }, { key: 2, label: "Treatment" }], rows }));
+}
+
+// ================= BOOT =================
+function lazyCharts() {
+  const io = new IntersectionObserver((entries) => entries.forEach((e) => {
+    if (!e.isIntersecting) return;
+    io.unobserve(e.target);
+    render(e.target.dataset.chart);
+  }), { rootMargin: "200px 0px" });
+  $$("[data-chart]").forEach((fig) => {
+    const node = setupCard(fig);
+    new ResizeObserver(() => live.get(fig.dataset.chart)?.inst.resize()).observe(node);
+    io.observe(fig);
+  });
+}
+function scrollSpy() {
+  const links = new Map($$(".nav a").map((a) => [a.getAttribute("href").slice(1), a]));
+  const io = new IntersectionObserver((entries) => entries.forEach((e) => {
+    if (e.isIntersecting) { links.forEach((a) => a.classList.remove("active")); links.get(e.target.id)?.classList.add("active"); }
+  }), { rootMargin: "-40% 0px -55% 0px" });
+  links.forEach((_, id) => { const s = document.getElementById(id); if (s) io.observe(s); });
+  const hero = new IntersectionObserver(([e]) => { if (e.isIntersecting) links.forEach((a) => a.classList.remove("active")); }, { rootMargin: "-40% 0px -55% 0px" });
+  hero.observe(document.getElementById("top"));
+}
+function reveal() {
+  $$(".insight, .card, .callout, .tier, .anomaly").forEach((n) => n.classList.add("reveal"));
+  if (REDUCED) { $$(".reveal").forEach((n) => n.classList.add("in")); return; }
+  const io = new IntersectionObserver((entries) => entries.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } }), { rootMargin: "0px 0px -8% 0px" });
+  $$(".reveal").forEach((n) => io.observe(n));
+}
+function themeToggle() {
+  $("#theme-toggle").addEventListener("click", () => {
+    const next = isDark() ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem("vr-theme", next); } catch (e) { /* storage unavailable */ }
+    T = tokens();
+    [...live.keys()].forEach(render);
+    if (tiles) tiles.setUrl(tileUrl());
+    drawMarkers(); worstStations();
+    $("#map-legend") && initLegendColors();
+  });
+}
+function initLegendColors() {
+  $$("#map-legend .swatch").forEach((s, i) => (s.style.background = Object.values(GEN())[i]));
+}
+function packToggle() {
+  $$("#pack-toggle button").forEach((b) => b.addEventListener("click", () => {
+    state.pack = b.dataset.pack;
+    $$("#pack-toggle button").forEach((x) => x.setAttribute("aria-checked", String(x === b)));
+    refresh("range");
+  }));
+}
+
+kpis();
+cityFilter();
+worstStations();
+waves();
+batteryStats();
+partnerTable();
+factorSelect();
+actions();
+quality();
+lazyCharts();
+packToggle();
+themeToggle();
+scrollSpy();
+reveal();
+initMap();
