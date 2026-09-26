@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+venv/
+.env
+.DS_Store
+
+# Raw hackathon data is ~1 GB and lives in Google Drive; fetch it with data/download_data.py
+data/raw/
