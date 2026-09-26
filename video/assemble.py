@@ -36,7 +36,8 @@ for i, (t, name) in enumerate(seq):
 lines.append(f"file 'frames/{seq[-1][1]}'")
 (HERE / "frames.txt").write_text("\n".join(lines) + "\n")
 
-audio = HERE / "narration.wav"
+# The full soundtrack (voice, score and effects from sound.py) if present, otherwise the voice alone.
+audio = HERE / "final_audio.wav" if (HERE / "final_audio.wav").exists() else HERE / "narration.wav"
 cmd = ["ffmpeg", "-y", "-v", "error", "-stats", "-f", "concat", "-safe", "0", "-i", str(HERE / "frames.txt")]
 if audio.exists():
     cmd += ["-i", str(audio)]

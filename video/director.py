@@ -22,6 +22,7 @@ BIN = open(HERE / "frames.bin", "wb")
 
 W, H, DPR = 1600, 900, 1.2
 manifest = []
+events = []
 state = {"last": -1}
 
 
@@ -101,12 +102,17 @@ def main():
             if pt:
                 move(pt["x"], pt["y"] + dy)
 
+        def log(kind, **extra):
+            events.append({"t": round(time.time() - t0, 3), "kind": kind, **extra})
+
         def glide(sel, off=80, ms=1500):
+            log("glide", ms=ms)
             pg.evaluate("([s, o, m]) => __glideTo(s, o, m)", [sel, off, ms])
 
         def click(sel):
             hover(sel, 0.5, 0.5)
             pg.wait_for_timeout(120)
+            log("click")
             pg.click(sel)
 
         def to_delhi():
@@ -118,70 +124,76 @@ def main():
         def js_click(sel):
             pg.evaluate("(s) => document.querySelector(s).click()", sel)
 
+        # Shots are anchored to narration lines (index, fraction of the line), so they follow any voice's pacing.
+        lines = TL["items"]
+
+        def A(k, f):
+            return f if k < 0 else lines[k]["start"] + f * lines[k]["dur"]
+
         shots = [
-            (0.4, lambda: move(W * 0.66, H * 0.40, 20)),
-            (2.7, lambda: pg.evaluate("__startShow()")),
-            (3.4, lambda: move(W * 0.78, H * 0.30, 60)),
-            (6.0, lambda: move(W * 0.55, H * 0.55, 50)),
-            (8.3, lambda: glide(".kpis", 110, 1700)),
-            (10.3, lambda: hover(".kpi:nth-child(1)")),
-            (11.3, lambda: hover(".kpi:nth-child(2)")),
-            (12.6, lambda: hover(".kpi:nth-child(3)")),
-            (15.8, lambda: hover(".insight:nth-child(4)", 0.5, 0.35)),
-            (19.4, lambda: hover(".kpi:nth-child(4)")),
-            (22.6, lambda: glide("#overview", 70, 1600)),
-            (24.6, lambda: point("growth", 2, "max")),
+            (A(-1, 0.4), lambda: move(W * 0.66, H * 0.40, 20)),
+            (A(-1, 2.7), lambda: (log("title_out"), pg.evaluate("__startShow()"))),
+            (A(0, 0.024), lambda: move(W * 0.78, H * 0.30, 60)),
+            (A(0, 0.330), lambda: move(W * 0.55, H * 0.55, 50)),
+            (A(0, 0.600), lambda: glide(".kpis", 110, 1700)),
+            (A(0, 0.836), lambda: hover(".kpi:nth-child(1)")),
+            (A(0, 0.953), lambda: hover(".kpi:nth-child(2)")),
+            (A(1, 0.059), lambda: hover(".kpi:nth-child(3)")),
+            (A(1, 0.369), lambda: hover(".insight:nth-child(4)", 0.5, 0.35)),
+            (A(1, 0.717), lambda: hover(".kpi:nth-child(4)")),
+            (A(2, 0.0), lambda: glide("#overview", 70, 1600)),
+            (A(2, 0.359), lambda: point("growth", 2, "max")),
             # Our approach
-            (28.7, lambda: glide("#quality", 70, 1900)),
-            (31.2, lambda: hover(".anomaly:nth-child(2)")),
-            (34.2, lambda: hover(".anomaly:nth-child(1)")),
-            (38.6, lambda: glide("#cleaning", 120, 1400)),
-            (40.6, lambda: hover("#cleaning tbody tr:nth-child(1)", 0.35, 0.5)),
-            (43.4, lambda: hover("#cleaning tbody tr:nth-child(2)", 0.35, 0.5)),
-            (46.6, lambda: hover("#cleaning tbody tr:nth-child(5)", 0.35, 0.5)),
-            (49.9, lambda: glide("[data-chart=did]", "center", 1700)),
-            (52.4, lambda: point("did", 3, 0)),
-            (55.6, lambda: glide("[data-chart=logit]", "center", 1400)),
-            (57.6, lambda: point("logit", 1, "min")),
+            (A(3, 0.0), lambda: glide("#quality", 70, 1900)),
+            (A(3, 0.258), lambda: hover(".anomaly:nth-child(2)")),
+            (A(3, 0.572), lambda: hover(".anomaly:nth-child(1)")),
+            (A(4, 0.001), lambda: glide("#cleaning", 120, 1400)),
+            (A(4, 0.183), lambda: hover("#cleaning tbody tr:nth-child(1)", 0.35, 0.5)),
+            (A(4, 0.438), lambda: hover("#cleaning tbody tr:nth-child(2)", 0.35, 0.5)),
+            (A(4, 0.729), lambda: hover("#cleaning tbody tr:nth-child(5)", 0.35, 0.5)),
+            (A(5, 0.002), lambda: glide("[data-chart=did]", "center", 1700)),
+            (A(5, 0.255), lambda: point("did", 3, 0)),
+            (A(5, 0.578), lambda: glide("[data-chart=logit]", "center", 1400)),
+            (A(5, 0.781), lambda: point("logit", 1, "min")),
             # Insights: Gen1 heat
-            (60.4, lambda: glide("#failures", 70, 1700)),
-            (63.4, lambda: point("heatmap", 0, "max")),
-            (69.4, lambda: glide("[data-chart=chargetime]", 150, 1500)),
-            (71.9, lambda: point("chargetime", 0, "max")),
-            (75.8, lambda: point("stockout", 0, "max")),
-            (78.9, lambda: point("stockout", 1, "max", -6)),
-            (81.4, lambda: glide("[data-chart=heatmap]", 140, 1300)),
-            (83.0, lambda: click("#city-filter [data-city='Delhi NCR']")),
-            (84.0, lambda: click("#city-filter [data-city='Jaipur']")),
-            (85.0, lambda: click("#city-filter [data-city='Hyderabad']")),
-            (86.1, lambda: glide("#map-card", 130, 1400)),
-            (87.7, lambda: click("#map-mode [data-mode='columns']")),
-            (89.4, lambda: to_delhi()),
+            (A(6, 0.004), lambda: glide("#failures", 70, 1700)),
+            (A(6, 0.348), lambda: point("heatmap", 0, "max")),
+            (A(7, 0.002), lambda: glide("[data-chart=chargetime]", 150, 1500)),
+            (A(7, 0.212), lambda: point("chargetime", 0, "max")),
+            (A(7, 0.539), lambda: point("stockout", 0, "max")),
+            (A(7, 0.800), lambda: point("stockout", 1, "max", -6)),
+            (A(8, 0.0), lambda: glide("[data-chart=heatmap]", 140, 1300)),
+            (A(8, 0.146), lambda: click("#city-filter [data-city='Delhi NCR']")),
+            (A(8, 0.249), lambda: click("#city-filter [data-city='Jaipur']")),
+            (A(8, 0.352), lambda: click("#city-filter [data-city='Hyderabad']")),
+            (A(8, 0.466), lambda: glide("#map-card", 130, 1400)),
+            (A(8, 0.631), lambda: click("#map-mode [data-mode='columns']")),
+            (A(8, 0.806), lambda: to_delhi()),
             # Insights: batteries
-            (92.2, lambda: glide("[data-chart=lots]", "center", 1600)),
-            (93.4, lambda: (js_click("#city-filter .all"), js_click("#map-mode [data-mode='points']"))),
-            (94.6, lambda: point("lots", 0, "max")),
-            (102.6, lambda: glide("#battery-stats", "center", 1300)),
-            (104.6, lambda: hover("#battery-stats .mini:nth-child(3)")),
-            (106.9, lambda: hover("#battery-stats .mini:nth-child(4)")),
-            (108.8, lambda: glide("[data-chart=range]", 110, 1300)),
-            (110.6, lambda: click("#pack-toggle [data-pack='3W_4.8kWh']")),
+            (A(9, 0.058), lambda: glide("[data-chart=lots]", "center", 1600)),
+            (A(9, 0.169), lambda: (js_click("#city-filter .all"), js_click("#map-mode [data-mode='points']"))),
+            (A(9, 0.280), lambda: point("lots", 0, "max")),
+            (A(10, 0.0), lambda: glide("#battery-stats", "center", 1300)),
+            (A(10, 0.193), lambda: hover("#battery-stats .mini:nth-child(3)")),
+            (A(10, 0.422), lambda: hover("#battery-stats .mini:nth-child(4)")),
+            (A(10, 0.611), lambda: glide("[data-chart=range]", 110, 1300)),
+            (A(10, 0.790), lambda: click("#pack-toggle [data-pack='3W_4.8kWh']")),
             # Insights: churn
-            (112.9, lambda: glide("[data-chart=cohort]", 110, 1500)),
-            (115.1, lambda: point("cohort", 0, "min")),
-            (118.6, lambda: point("cohort", 1, "max")),
-            (121.4, lambda: glide(".tiers", "center", 1400)),
-            (123.2, lambda: hover(".tier-primary")),
-            (126.4, lambda: hover(".tier-none")),
+            (A(11, 0.0), lambda: glide("[data-chart=cohort]", 110, 1500)),
+            (A(11, 0.540), lambda: point("cohort", 0, "min")),
+            (A(12, 0.120), lambda: point("cohort", 1, "max")),
+            (A(12, 0.356), lambda: glide(".tiers", "center", 1400)),
+            (A(12, 0.507), lambda: hover(".tier-primary")),
+            (A(12, 0.776), lambda: hover(".tier-none")),
             # Recommendations
-            (129.6, lambda: glide("#actions", 70, 1700)),
-            (131.8, lambda: hover(".verdict:nth-child(1)", 0.5, 0.4)),
-            (140.1, lambda: hover(".verdict:nth-child(2)", 0.5, 0.4)),
-            (146.0, lambda: hover(".verdict:nth-child(3)", 0.5, 0.4)),
-            (151.9, lambda: hover(".verdict:nth-child(4)", 0.5, 0.4)),
-            (164.8, lambda: glide("#plan li:nth-child(4)", "center", 1500)),
-            (166.8, lambda: hover("#plan li:nth-child(4)", 0.4, 0.5)),
-            (172.3, lambda: pg.evaluate("__endCard()")),
+            (A(13, 0.0), lambda: glide("#actions", 70, 1700)),
+            (A(13, 0.211), lambda: hover(".verdict:nth-child(1)", 0.5, 0.4)),
+            (A(14, 0.0), lambda: hover(".verdict:nth-child(2)", 0.5, 0.4)),
+            (A(15, 0.0), lambda: hover(".verdict:nth-child(3)", 0.5, 0.4)),
+            (A(16, 0.002), lambda: hover(".verdict:nth-child(4)", 0.5, 0.4)),
+            (A(17, 0.0), lambda: glide("#plan li:nth-child(4)", "center", 1500)),
+            (A(17, 0.241), lambda: hover("#plan li:nth-child(4)", 0.4, 0.5)),
+            (A(18, -0.5), lambda: (log("end_card"), pg.evaluate("__endCard()"))),
         ]
         stop = UNTIL or TL["total"]
         for t, fn in shots:
@@ -198,7 +210,7 @@ def main():
         b.close()
 
     BIN.close()
-    (HERE / "manifest.json").write_text(json.dumps({"t0": t0, "total": stop, "frames": manifest}))
+    (HERE / "manifest.json").write_text(json.dumps({"t0": t0, "total": stop, "frames": manifest, "events": events}))
     ts = [m[0] - t0 for m in manifest if m[0] >= t0]
     gaps = sorted(b - a for a, b in zip(ts, ts[1:]))
     print(f"{len(manifest)} frames, {len(ts) / stop:.1f} fps average, p95 gap {gaps[int(len(gaps) * .95)] * 1000:.0f} ms, max gap {gaps[-1] * 1000:.0f} ms")
