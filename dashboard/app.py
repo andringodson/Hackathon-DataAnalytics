@@ -7,8 +7,8 @@ import streamlit as st
 from plotly.subplots import make_subplots
 
 DATA = Path(__file__).resolve().parent.parent / "data" / "processed"
-REPO = "https://github.com/andringodson/Hackathon-DataAnalytics"
-COLAB = "https://colab.research.google.com/github/andringodson/Hackathon-DataAnalytics/blob/main/notebooks/VoltRelay_Analysis.ipynb"
+REPO = "https://github.com/andringodson/Hackathon-DataAnalytics-26"
+COLAB = "https://colab.research.google.com/github/andringodson/Hackathon-DataAnalytics-26/blob/main/notebooks/VoltRelay_Analysis.ipynb"
 
 st.set_page_config(page_title="VoltRelay Network Analysis", page_icon=":material/battery_charging_full:", layout="wide")
 

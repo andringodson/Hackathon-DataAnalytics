@@ -4,7 +4,7 @@
 
 Data: 3.88M swap attempts, 1.49M station-hours, 20K riders, 6.5K batteries, 44K tickets · 6 cities · Jan 2024 – Jun 2025
 
-Full reproducible analysis: [VoltRelay_Analysis.ipynb](https://github.com/andringodson/Hackathon-DataAnalytics/blob/main/notebooks/VoltRelay_Analysis.ipynb) · Interactive dashboard: [andringodson.github.io/Hackathon-DataAnalytics](https://andringodson.github.io/Hackathon-DataAnalytics/)
+Full reproducible analysis: [VoltRelay_Analysis.ipynb](https://github.com/andringodson/Hackathon-DataAnalytics-26/blob/main/notebooks/VoltRelay_Analysis.ipynb) · Interactive dashboard: [andringodson.github.io/Hackathon-DataAnalytics-26](https://andringodson.github.io/Hackathon-DataAnalytics-26/)
 ---
 
 ## Executive summary

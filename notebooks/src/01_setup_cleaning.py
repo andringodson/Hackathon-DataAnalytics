@@ -3,7 +3,7 @@
 #
 # **Gradient Learnings Data Analytics Hackathon** · Battery-swap network, 6 Indian cities, Jan 2024 – Jun 2025
 #
-# [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/andringodson/Hackathon-DataAnalytics/blob/main/notebooks/VoltRelay_Analysis.ipynb)
+# [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/andringodson/Hackathon-DataAnalytics-26/blob/main/notebooks/VoltRelay_Analysis.ipynb)
 #
 # This notebook runs top to bottom in Google Colab. The first code cell downloads the eight organiser CSVs (~830 MB) from Google Drive.
 #
