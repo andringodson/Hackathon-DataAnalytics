@@ -1,4 +1,5 @@
-const D = await (await fetch("data.json")).json();
+const V = new URL(import.meta.url).searchParams.get("v") ?? "dev";
+const D = await (await fetch(`data.json?v=${V}`)).json();
 const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const FONT = 'Inter, system-ui, -apple-system, "Segoe UI", sans-serif';
 const $ = (s, r = document) => r.querySelector(s);
@@ -339,6 +340,12 @@ const LAYERS = { points: ["city-bubbles", "city-labels", "st-dots"], heat: ["st-
 const ALL_LAYERS = ["st-heat", "city-cols", "st-cols", "city-bubbles", "city-labels", "st-dots"];
 
 function addStationLayers() {
+  if (isDark()) {
+    try {
+      map.setPaintProperty("background", "background-color", "#000000");
+      if (map.getLayer("water")) map.setPaintProperty("water", "fill-color", "#060a24");
+    } catch (e) { /* basemap layer names changed upstream; keep its defaults */ }
+  }
   const rows = mapRows(), gen = GEN();
   const genColor = ["match", ["get", "gen"], "Gen1", gen.Gen1, "Gen2", gen.Gen2, gen.Gen3];
   const hover = ["boolean", ["feature-state", "hover"], false];
@@ -531,6 +538,17 @@ function exportMapPng() {
   map.triggerRepaint();
 }
 
+const ML = "https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl";
+let mlPromise = null, mapPromise = null;
+function loadMapLibre() {
+  if (window.maplibregl) return Promise.resolve();
+  return (mlPromise ??= new Promise((resolve, reject) => {
+    const js = el("script", { src: `${ML}.js` });
+    js.onload = resolve; js.onerror = reject;
+    document.head.append(el("link", { rel: "stylesheet", href: `${ML}.css` }), js);
+  }));
+}
+const ensureMap = () => (mapPromise ??= loadMapLibre().then(initMap, () => { $("#map-fallback").hidden = false; return null; }));
 function initMap() {
   if (map) return map;
   const fail = () => { $("#map-fallback").hidden = false; return null; };
@@ -553,12 +571,14 @@ function flyToStation(id) {
   const s = stationById(id);
   if (!s) return;
   $("#map-card").scrollIntoView({ behavior: REDUCED ? "auto" : "smooth", block: "center" });
-  if (!initMap()) return;
-  const go = () => {
-    map.flyTo({ center: [s.longitude, s.latitude], zoom: 12, pitch: mapMode === "columns" ? 55 : 0, duration: REDUCED ? 0 : 2200, essential: true });
-    map.once("moveend", () => showPopup(id, [s.longitude, s.latitude]));
-  };
-  map.getLayer("st-dots") ? go() : map.once("idle", go);
+  ensureMap().then((m) => {
+    if (!m) return;
+    const go = () => {
+      m.flyTo({ center: [s.longitude, s.latitude], zoom: 12, pitch: mapMode === "columns" ? 55 : 0, duration: REDUCED ? 0 : 2200, essential: true });
+      m.once("moveend", () => showPopup(id, [s.longitude, s.latitude]));
+    };
+    m.getLayer("st-dots") ? go() : m.once("idle", go);
+  });
 }
 
 function mapControls() {
@@ -567,7 +587,7 @@ function mapControls() {
   $("#map-png").addEventListener("click", exportMapPng);
   $("#map-csv").addEventListener("click", () => downloadCsv({ cols: ["station_id", "city", "zone", "latitude", "longitude", "charger_generation", "location_type", "host_type",
     "expansion_wave", "connectivity_tier", "swaps_per_day", "attempts", "failures", "failure_rate_all", "fail_2025"].map((k) => ({ key: k, label: k })), rows: mapRows() }, "voltrelay-stations.csv"));
-  const io = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) { io.disconnect(); initMap(); } }, { rootMargin: "300px 0px" });
+  const io = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) { io.disconnect(); ensureMap(); } }, { rootMargin: "300px 0px" });
   io.observe($("#map-card"));
 }
 function worstStations() {
@@ -974,6 +994,8 @@ function themeToggle() {
     T = tokens();
     [...live.keys()].forEach(render);
     HEAT = heatRamp();
+    fx?.repaint();
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", next === "dark" ? "#000000" : "#f1f2ee");
     if (map) {
       map.stop();
       popup?.remove();
@@ -993,6 +1015,176 @@ function packToggle() {
   }));
 }
 
+// ================= INTERACTIVE ROYAL BACKGROUND =================
+// Two canvases on one rAF loop: a quarter-resolution aurora (soft glows are cheap at low res and upscale smoothly)
+// and a full-resolution constellation that swirls around and links to the cursor. Paused when the tab is hidden.
+function backgroundFx() {
+  const aur = $("#bg-aurora"), par = $("#bg-particles");
+  if (!aur || !par) return null;
+  const a = aur.getContext("2d"), c = par.getContext("2d");
+  const coarse = matchMedia("(pointer: coarse)").matches;
+  const m = { x: innerWidth * 0.7, y: innerHeight * 0.25, tx: innerWidth * 0.7, ty: innerHeight * 0.25, on: false, e: 0 };
+  let W = 0, H = 0, parts = [], raf = 0;
+  const LB = [[], [], [], []], CB = [[], [], [], []], DB = Array.from({ length: 9 }, () => []);
+  const palette = () => (isDark()
+    ? { blobs: ["rgba(29,43,160,0.55)", "rgba(88,40,170,0.48)", "rgba(12,24,98,0.62)", "rgba(120,40,150,0.34)"], glow: "rgba(82,100,255,0.34)",
+        dots: ["#7d92ff", "#a98bff", "#d4b36a"], line: "125,145,255", dotAlpha: 0.9 }
+    : { blobs: ["rgba(65,105,225,0.16)", "rgba(120,81,169,0.14)", "rgba(29,43,143,0.10)", "rgba(155,120,220,0.12)"], glow: "rgba(65,105,225,0.16)",
+        dots: ["#3b5bdb", "#7048e8", "#b08a2e"], line: "59,91,219", dotAlpha: 0.55 });
+  let P = palette();
+
+  function seed(n) {
+    parts = Array.from({ length: n }, () => ({ x: Math.random() * W, y: Math.random() * H, vx: (Math.random() - 0.5) * 0.3, vy: (Math.random() - 0.5) * 0.3,
+      r: 0.7 + Math.random() * 1.6, k: Math.random() < 0.12 ? 2 : Math.random() < 0.55 ? 0 : 1, ph: Math.random() * 6.283 }));
+  }
+  function resize() {
+    const oldW = W;
+    W = innerWidth; H = innerHeight;
+    const dpr = Math.min(devicePixelRatio || 1, 1.25);
+    aur.width = Math.ceil(W / 4); aur.height = Math.ceil(H / 4);
+    par.width = Math.round(W * dpr); par.height = Math.round(H * dpr);
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const n = Math.round(Math.min(95, Math.max(26, (W * H) / (coarse ? 24000 : 16000))));
+    if (Math.abs(W - oldW) > 80 || !parts.length) seed(n);
+  }
+  function aurora(t) {
+    const w = aur.width, h = aur.height, s = t / 1000, big = Math.max(w, h);
+    a.clearRect(0, 0, w, h);
+    const blobs = [[0.15 + 0.08 * Math.sin(s * 0.13), 0.2 + 0.07 * Math.cos(s * 0.11), 0.6], [0.85 + 0.07 * Math.cos(s * 0.09), 0.28 + 0.08 * Math.sin(s * 0.12), 0.55],
+      [0.55 + 0.1 * Math.sin(s * 0.07), 0.9 + 0.05 * Math.cos(s * 0.1), 0.65], [0.35 + 0.09 * Math.cos(s * 0.1), 0.6 + 0.08 * Math.sin(s * 0.08), 0.45]];
+    blobs.forEach(([bx, by, br], i) => {
+      const x = bx * w, y = by * h, g = a.createRadialGradient(x, y, 0, x, y, br * big);
+      g.addColorStop(0, P.blobs[i]); g.addColorStop(1, "rgba(0,0,0,0)");
+      a.fillStyle = g; a.fillRect(0, 0, w, h);
+    });
+    const gx = m.x / 4, gy = m.y / 4, g = a.createRadialGradient(gx, gy, 0, gx, gy, big * (0.22 + 0.06 * m.e));
+    g.addColorStop(0, P.glow); g.addColorStop(1, "rgba(0,0,0,0)");
+    a.fillStyle = g; a.fillRect(0, 0, w, h);
+  }
+  function constellation(t) {
+    c.clearRect(0, 0, W, H);
+    const R = coarse ? 130 : 180, R2 = R * R, L = coarse ? 95 : 125, L2 = L * L;
+    for (const p of parts) {
+      if (m.on) {
+        const dx = m.x - p.x, dy = m.y - p.y, d2 = dx * dx + dy * dy;
+        if (d2 < R2) {
+          const d = Math.sqrt(d2) || 1, f = 1 - d / R, pull = d < 55 ? -0.14 : 0.025;
+          p.vx += (-dy / d) * f * 0.07 + (dx / d) * f * pull;
+          p.vy += (dx / d) * f * 0.07 + (dy / d) * f * pull;
+        }
+      }
+      p.vx = p.vx * 0.975 + Math.cos(p.ph + t * 0.0002) * 0.004;
+      p.vy = p.vy * 0.975 + Math.sin(p.ph + t * 0.00025) * 0.004;
+      p.x += p.vx; p.y += p.vy;
+      if (p.x < -12) p.x = W + 12; else if (p.x > W + 12) p.x = -12;
+      if (p.y < -12) p.y = H + 12; else if (p.y > H + 12) p.y = -12;
+    }
+    // Batch strokes and fills by opacity level: ~13 draw calls per frame instead of one per line/dot.
+    for (const b of LB) b.length = 0;
+    for (const b of CB) b.length = 0;
+    for (const b of DB) b.length = 0;
+    for (let i = 0; i < parts.length; i++) {
+      const p = parts[i];
+      for (let j = i + 1; j < parts.length; j++) {
+        const q = parts[j], dx = p.x - q.x, dy = p.y - q.y, d2 = dx * dx + dy * dy;
+        if (d2 < L2) LB[Math.min(3, ((1 - d2 / L2) * 4) | 0)].push(p.x, p.y, q.x, q.y);
+      }
+      if (m.on) {
+        const dx = p.x - m.x, dy = p.y - m.y, d2 = dx * dx + dy * dy;
+        if (d2 < R2) CB[Math.min(3, ((1 - d2 / R2) * 4) | 0)].push(p.x, p.y);
+      }
+      const level = Math.min(2, ((0.5 + 0.5 * Math.sin(p.ph + t * 0.0018)) * 3) | 0);
+      DB[p.k * 3 + level].push(p.x, p.y, p.r);
+    }
+    c.lineWidth = 1;
+    LB.forEach((pts, b) => {
+      if (!pts.length) return;
+      c.strokeStyle = `rgba(${P.line},${(0.05 * (b + 1)).toFixed(2)})`;
+      c.beginPath();
+      for (let k = 0; k < pts.length; k += 4) { c.moveTo(pts[k], pts[k + 1]); c.lineTo(pts[k + 2], pts[k + 3]); }
+      c.stroke();
+    });
+    CB.forEach((pts, b) => {
+      if (!pts.length) return;
+      c.strokeStyle = `rgba(${P.line},${(0.14 * (b + 1)).toFixed(2)})`;
+      c.beginPath();
+      for (let k = 0; k < pts.length; k += 2) { c.moveTo(pts[k], pts[k + 1]); c.lineTo(m.x, m.y); }
+      c.stroke();
+    });
+    DB.forEach((pts, key) => {
+      if (!pts.length) return;
+      c.globalAlpha = P.dotAlpha * (0.4 + 0.3 * (key % 3));
+      c.fillStyle = P.dots[(key / 3) | 0];
+      c.beginPath();
+      for (let k = 0; k < pts.length; k += 3) { c.moveTo(pts[k] + pts[k + 2], pts[k + 1]); c.arc(pts[k], pts[k + 1], pts[k + 2], 0, 6.283); }
+      c.fill();
+    });
+    c.globalAlpha = 1;
+  }
+  function frame(t) {
+    m.x += (m.tx - m.x) * 0.12; m.y += (m.ty - m.y) * 0.12; m.e *= 0.96;
+    aurora(t); constellation(t);
+    raf = requestAnimationFrame(frame);
+  }
+  const start = () => { if (!raf && !document.hidden && !REDUCED) raf = requestAnimationFrame(frame); };
+  const stop = () => { cancelAnimationFrame(raf); raf = 0; };
+  const still = () => { aurora(0); constellation(0); };
+
+  addEventListener("pointermove", (e) => { const dx = e.clientX - m.tx, dy = e.clientY - m.ty; m.e = Math.min(1, m.e + Math.hypot(dx, dy) / 400);
+    m.tx = e.clientX; m.ty = e.clientY; m.on = true; }, { passive: true });
+  document.addEventListener("pointerleave", () => { m.on = false; });
+  addEventListener("blur", () => { m.on = false; });
+  let rt = 0;
+  addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { resize(); if (REDUCED) still(); }, 120); }, { passive: true });
+  document.addEventListener("visibilitychange", () => (document.hidden ? stop() : start()));
+  resize();
+  still();
+  if (!REDUCED) {
+    // Start animating only once the page is idle so the effect never competes with first render.
+    const go = () => (window.requestIdleCallback ? requestIdleCallback(start, { timeout: 2500 }) : setTimeout(start, 800));
+    document.readyState === "complete" ? go() : addEventListener("load", go, { once: true });
+  }
+  return { repaint() { P = palette(); if (REDUCED) still(); } };
+}
+
+function spotlight() {
+  $$(".card, .kpi, .insight, .verdict, .mini, .anomaly, .tier, .plan li").forEach((n) => n.classList.add("fx-spot"));
+  let last = null, queued = false;
+  document.addEventListener("pointermove", (e) => {
+    last = e;
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => {
+      queued = false;
+      const n = last.target.closest?.(".fx-spot");
+      if (!n) return;
+      const r = n.getBoundingClientRect();
+      n.style.setProperty("--x", `${last.clientX - r.left}px`);
+      n.style.setProperty("--y", `${last.clientY - r.top}px`);
+    });
+  }, { passive: true });
+}
+
+function scrollUi() {
+  const bar = $("#progress"), top = $("#to-top");
+  let queued = false;
+  const update = () => {
+    queued = false;
+    const h = document.documentElement.scrollHeight - innerHeight;
+    bar.style.transform = `scaleX(${h > 0 ? Math.min(1, scrollY / h) : 0})`;
+    top.classList.toggle("show", scrollY > innerHeight * 0.9);
+  };
+  addEventListener("scroll", () => { if (!queued) { queued = true; requestAnimationFrame(update); } }, { passive: true });
+  top.addEventListener("click", () => scrollTo({ top: 0, behavior: REDUCED ? "auto" : "smooth" }));
+  update();
+}
+
+function registerServiceWorker() {
+  if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register(`sw.js?v=${V}`).catch(() => {});
+}
+
+const fx = backgroundFx();
+
 kpis();
 cityFilter();
 worstStations();
@@ -1008,3 +1200,6 @@ themeToggle();
 scrollSpy();
 reveal();
 mapControls();
+spotlight();
+scrollUi();
+registerServiceWorker();

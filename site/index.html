@@ -5,19 +5,41 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>VoltRelay Network Analysis</title>
   <meta name="description" content="What drives service failures, new-rider churn and margin erosion on VoltRelay's battery-swap network: an interactive analysis of 3.9M swap attempts." />
-  <meta name="color-scheme" content="light dark" />
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23184f95'/%3E%3Cpath d='M18 5 9 18h6l-2 9 10-14h-6z' fill='%23fff'/%3E%3C/svg%3E" />
+  <meta name="color-scheme" content="dark light" />
+  <meta name="theme-color" content="#000000" />
+  <link rel="canonical" href="https://andringodson.github.io/Hackathon-DataAnalytics/" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="VoltRelay network analysis" />
+  <meta property="og:title" content="VoltRelay: growth hid two fixable failures" />
+  <meta property="og:description" content="Interactive analysis of 3.9M battery-swap attempts across 6 Indian cities: why failures, churn and margin moved the way they did, and what to fund next." />
+  <meta property="og:url" content="https://andringodson.github.io/Hackathon-DataAnalytics/" />
+  <meta property="og:image" content="https://andringodson.github.io/Hackathon-DataAnalytics/og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%233b5bdb'/%3E%3Cstop offset='1' stop-color='%236741d9'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='url(%23g)'/%3E%3Cpath d='M18 5 9 18h6l-2 9 10-14h-6z' fill='%23fff'/%3E%3C/svg%3E" />
+  <link rel="apple-touch-icon" href="icon-180.png" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="dns-prefetch" href="https://tiles.openfreemap.org" />
+  <link rel="preload" href="data.json?v=__V__" as="fetch" crossorigin="anonymous" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.css" />
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=__V__" />
   <script>
-    try { const t = localStorage.getItem("vr-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+    (function () {
+      var t = "dark";
+      try { t = localStorage.getItem("vr-theme") || "dark"; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
   </script>
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
+  <div class="bg-fx" aria-hidden="true"><canvas id="bg-aurora"></canvas><canvas id="bg-particles"></canvas></div>
+  <div class="progress" id="progress" aria-hidden="true"></div>
+  <noscript><p class="noscript">This dashboard needs JavaScript for its charts and map. The same analysis is in the <a href="https://github.com/andringodson/Hackathon-DataAnalytics/blob/main/report/analysis_report.md">written report</a>.</p></noscript>
 
   <header class="topbar">
     <div class="topbar-inner">
@@ -298,8 +320,9 @@
     </div>
   </footer>
 
-  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
-  <script src="app.js" type="module"></script>
+  <button class="to-top" id="to-top" type="button" aria-label="Back to top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" /></svg></button>
+
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js" defer></script>
+  <script src="app.js?v=__V__" type="module"></script>
 </body>
 </html>
