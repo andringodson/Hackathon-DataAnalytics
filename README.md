@@ -12,7 +12,7 @@ Submission for the **Gradient Learnings Data Analytics Hackathon**: an investiga
 | **Colab notebook**: data understanding, cleaning, EDA, analysis of all six core questions and five deep dives; runs top to bottom | [`notebooks/VoltRelay_Analysis.ipynb`](notebooks/VoltRelay_Analysis.ipynb) · [open in Colab](https://colab.research.google.com/github/andringodson/Hackathon-DataAnalytics/blob/main/notebooks/VoltRelay_Analysis.ipynb) |
 | **Analysis report**: problem, approach, insights, visuals, findings, recommendations | [`report/analysis_report.md`](report/analysis_report.md) · [PDF](report/analysis_report.pdf) |
 | **Three-minute video**: script and suggested visuals | [`report/video_script.md`](report/video_script.md) |
-| **Interactive dashboard** (bonus) | [andringodson.github.io/Hackathon-DataAnalytics](https://andringodson.github.io/Hackathon-DataAnalytics/) (interactive web app on GitHub Pages: OLED-black theme with a cursor-reactive royal background, story-led sections, filters, 3D station map, table view and CSV export for every chart; installable and cached for instant repeat visits) |
+| **Interactive dashboard** (bonus) | [andringodson.github.io/Hackathon-DataAnalytics](https://andringodson.github.io/Hackathon-DataAnalytics/) (interactive web app on GitHub Pages: OLED-black royal design with editorial serif typography and a cursor-reactive background, story-led sections with smooth transitions, filters that morph charts in place, 3D station map, table view and CSV export for every chart; accessible (zero axe violations), installable and cached for instant repeat visits) |
 
 ## Key findings
 

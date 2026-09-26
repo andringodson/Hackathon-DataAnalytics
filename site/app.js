@@ -50,10 +50,11 @@ function base(extra = {}) {
   return {
     animation: !REDUCED, animationDuration: 700, animationEasing: "cubicOut", animationDurationUpdate: 650, animationEasingUpdate: "cubicInOut",
     textStyle: { fontFamily: FONT, color: T.ink2 },
-    grid: { left: 4, right: 18, top: 40, bottom: 4, containLabel: true },
+    // The right margin leaves room for a centred last category label such as "2025 Q2".
+    grid: { left: 4, right: 28, top: 40, bottom: 4, containLabel: true },
     tooltip: {
       confine: true, backgroundColor: T.surface, borderColor: T.line, borderWidth: 1, padding: [8, 12],
-      textStyle: { color: T.ink, fontSize: 12, fontFamily: FONT }, extraCssText: "border-radius:10px;box-shadow:0 10px 30px -10px rgba(0,0,0,.35);",
+      textStyle: { color: T.ink, fontSize: 12, fontFamily: FONT }, extraCssText: T.dark ? "border-radius:10px;box-shadow:0 14px 36px -12px rgba(0,0,0,.9),inset 0 1px 0 rgba(201,169,110,.22);" : "border-radius:10px;box-shadow:0 10px 30px -10px rgba(0,0,0,.35);",
     },
     legend: { top: 0, left: 0, itemGap: 16, itemWidth: 16, itemHeight: 3, icon: "roundRect", textStyle: { color: T.ink2, fontSize: 12 } },
     ...extra,
@@ -104,12 +105,16 @@ const REG = {};
 const live = new Map();
 
 function register(id, option, table, opts = {}) { REG[id] = { option, table, ...opts }; }
+// Charts with a separate phone layout re-render when the viewport crosses this width.
+const NARROW_MQ = matchMedia("(max-width: 560px)");
+const narrow = () => NARROW_MQ.matches;
+const chartHeight = (id) => { const h = REG[id]?.height; return typeof h === "function" ? h() : h; };
 
 function setupCard(fig) {
   const id = fig.dataset.chart;
   const title = $("h3", fig)?.textContent ?? id;
   const chart = el("div", { class: "chart", role: "img", "aria-label": `${title} chart. Use the Table button for the underlying values.` });
-  if (REG[id]?.height) chart.style.blockSize = `${REG[id].height}px`;
+  if (chartHeight(id)) chart.style.blockSize = `${chartHeight(id)}px`;
   const tableBox = el("div", { class: "table-view", hidden: "" });
   const tBtn = el("button", { class: "ghost", type: "button", "aria-pressed": "false" });
   tBtn.innerHTML = '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10"/></svg>';
@@ -139,10 +144,22 @@ function render(id) {
   live.get(id)?.inst.dispose();
   const inst = echarts.init(node, null, { renderer: "svg" });
   inst.setOption(REG[id].option());
-  live.set(id, { inst });
+  live.set(id, { inst, top0: inst.getOption().grid?.[0]?.top });
+  fitLegend(id);
   const box = $(".table-view", fig);
   if (!box.hidden) box.replaceChildren(buildTable(REG[id].table()));
 }
+// A legend that wraps onto a second row pushes the plot down instead of overlapping it.
+function fitLegend(id) {
+  const cur = live.get(id);
+  if (!cur || typeof cur.top0 !== "number") return;
+  const { inst } = cur, lm = inst.getModel().getComponent("legend"), grid = inst.getOption().grid;
+  if (!lm || !lm.get("show") || !lm.getData().length || grid.length !== 1) return;
+  const h = inst.getViewOfComponentModel(lm)?.group.getBoundingRect().height ?? 0;
+  const top = Math.max(cur.top0, Math.round(h) + 18);
+  if (top !== grid[0].top) inst.setOption({ grid: [{ top }] });
+}
+
 // Filters update the live chart in place, so ECharts morphs the marks to their new values instead of redrawing from zero.
 // Series that can come and go carry an id; replaceMerge drops the ones missing from the new option.
 function refresh(...ids) {
@@ -152,6 +169,7 @@ function refresh(...ids) {
     const node = cur.inst.getDom();
     if (!REDUCED) { node.classList.add("swapping"); setTimeout(() => node.classList.remove("swapping"), 160); }
     cur.inst.setOption(REG[id].option(), { replaceMerge: ["series"] });
+    fitLegend(id);
     const box = $(".table-view", node.closest("[data-chart]"));
     if (!box.hidden) box.replaceChildren(buildTable(REG[id].table()));
   });
@@ -578,6 +596,7 @@ function initMap() {
   map.addControl(new maplibregl.FullscreenControl({ container: $("#map-card .map-wrap") }), "top-right");
   map.addControl(new maplibregl.AttributionControl({}), "bottom-right");
   map.on("style.load", addStationLayers);
+  map.once("load", () => $("#map-card .map-wrap").classList.add("ready"));
   bindMapEvents();
   return map;
 }
@@ -602,8 +621,14 @@ function mapControls() {
   $("#map-png").addEventListener("click", exportMapPng);
   $("#map-csv").addEventListener("click", () => downloadCsv({ cols: ["station_id", "city", "zone", "latitude", "longitude", "charger_generation", "location_type", "host_type",
     "expansion_wave", "connectivity_tier", "swaps_per_day", "attempts", "failures", "failure_rate_all", "fail_2025"].map((k) => ({ key: k, label: k })), rows: mapRows() }, "voltrelay-stations.csv"));
-  const io = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) { io.disconnect(); ensureMap(); } }, { rootMargin: "300px 0px" });
-  io.observe($("#map-card"));
+  // MapLibre's start-up is ~0.5 s of main-thread work, so it begins in the first pause in scrolling once the map is
+  // within reach, never in the middle of a scroll.
+  const card = $("#map-card");
+  let near = false, pause = 0;
+  const start = () => { removeEventListener("scroll", onScroll); ensureMap(); };
+  const onScroll = () => { if (!near) return; clearTimeout(pause); pause = setTimeout(() => (window.requestIdleCallback ? requestIdleCallback(start, { timeout: 800 }) : start()), 250); };
+  addEventListener("scroll", onScroll, { passive: true });
+  new IntersectionObserver(([e], o) => { if (e.isIntersecting) { o.disconnect(); near = true; onScroll(); } }, { rootMargin: "1400px 0px" }).observe(card);
 }
 function worstStations() {
   const rows = D.stations.filter((s) => state.cities.has(s.city)).sort((a, b) => b.failure_rate_all - a.failure_rate_all).slice(0, 10);
@@ -685,18 +710,23 @@ const avgBy = (rows, k) => rows.reduce((a, r) => a + (r[k] ?? 0), 0) / Math.max(
 const BAD = ["KY-2407", "KY-2408", "KY-2409"];
 register("lots", () => {
   const lots = [...D.battery_lots].sort((a, b) => a.commissioned.localeCompare(b.commissioned));
+  // 55 rotated lot codes cannot fit a phone: there the axis is named instead, and one label covers the three bad lots.
+  const n = narrow(), mid = BAD[1], badMax = Math.max(...lots.filter((r) => BAD.includes(r.manufacturing_lot)).map((r) => r.loss));
   return base({
+    grid: { left: 4, right: 28, top: 40, bottom: n ? 24 : 4, containLabel: true },
     legend: { show: false },
     tooltip: { ...base().tooltip, trigger: "item", formatter: (p) => { const r = lots[p.dataIndex]; return head(`${r.manufacturing_lot} · ${r.supplier}`) +
       row(p.color, "SoH lost / 100 swaps", r.loss.toFixed(2), "dot") + row(T.muted, "Packs", r.packs, "dot") + row(T.muted, "Commissioned", r.commissioned, "dot"); } },
-    xAxis: xCat(lots.map((r) => r.manufacturing_lot), { axisLabel: { color: T.muted, fontSize: 10, rotate: 60, interval: 0 } }),
+    xAxis: xCat(lots.map((r) => r.manufacturing_lot), n ? { axisLabel: { show: false }, name: "55 lots, oldest → newest", nameLocation: "middle", nameGap: 12, nameTextStyle: { color: T.muted, fontSize: 11 } }
+      : { axisLabel: { color: T.muted, fontSize: 10, rotate: 60, interval: 0 } }),
     yAxis: yVal(),
     series: [bar("SoH lost per 100 swaps", lots.map((r) => ({ value: +r.loss.toFixed(2), itemStyle: { color: BAD.includes(r.manufacturing_lot) ? T.s2 : T.axis, borderRadius: [4, 4, 0, 0] },
-      label: BAD.includes(r.manufacturing_lot) ? { show: true, position: "top", color: T.ink, fontSize: 11, fontWeight: 600, formatter: (p) => p.value.toFixed(1) } : { show: false } })),
+      label: BAD.includes(r.manufacturing_lot) && (!n || r.manufacturing_lot === mid) ? { show: true, position: "top", color: T.ink, fontSize: 11, fontWeight: 600,
+        formatter: (p) => (n ? `KY-2407/08/09 ≈ ${badMax.toFixed(1)}` : p.value.toFixed(1)) } : { show: false } })),
     T.axis, { barMaxWidth: 14, markLine: markLines([{ yAxis: 3.05, label: { formatter: "typical lot ≈ 3.0", position: "insideEndTop", color: T.ink2, fontSize: 10.5 }, lineStyle: { color: T.muted, width: 1, type: "solid" } }]) })],
   });
 }, () => ({ cols: [{ key: "manufacturing_lot", label: "Lot" }, { key: "supplier", label: "Supplier" }, { key: "commissioned", label: "Commissioned" },
-  { key: "packs", label: "Packs", num: true }, { key: "loss", label: "SoH lost / 100 swaps", num: true, fmt: (v) => v.toFixed(2) }], rows: D.battery_lots }), { height: 340 });
+  { key: "packs", label: "Packs", num: true }, { key: "loss", label: "SoH lost / 100 swaps", num: true, fmt: (v) => v.toFixed(2) }], rows: D.battery_lots }), { height: () => (narrow() ? 300 : 340), responsive: true });
 
 const SOH = ["<70", "70–75", "75–80", "80–85", "85–90", "90–95", "95–100"];
 const COHORT_LABEL = { Cellora: "Cellora", Amptek: "Amptek", "Kyron KY-2407..09": "Kyron bad lots (KY-2407/08/09)", Kyron: "Kyron later lots" };
@@ -753,14 +783,22 @@ register("pilot", () => {
 }, () => ({ cols: [{ key: "week", label: "Week" }, { key: "Control cities", label: "Control", num: true, fmt: (v) => pct(v) }, { key: "Pilot cities (BLR, PUN)", label: "Pilot", num: true, fmt: (v) => pct(v) }], rows: D.pilot_weekly }));
 
 const SEG_LABEL = { "independent (pays PEAK)": "Independents", "partner, surcharge billed": "Partners, billed", "partner, surcharge exempt": "Partners, exempt" };
+const padLo = ({ min, max }) => Math.floor(min - (max - min) * 0.1);
+const padHi = ({ min, max }) => Math.ceil(max + (max - min) * 0.06);
+// Padded value axis: marks and their labels clear the plot edges; the off-interval edge ticks are hidden.
+const padded = (label = {}, lo = padLo) => ({ min: lo, max: padHi, axisLabel: { color: T.muted, fontSize: 11, showMinLabel: typeof lo === "number", showMaxLabel: false, ...label } });
 register("did", () => {
   const outcomes = [["peak-hour share (pp)", "Change in peak-hour share (pp)", (v) => `${v.toFixed(1)} pp`], ["revenue per swap (₹)", "Change in revenue per swap (₹)", (v) => inr(v)]];
   const segs = Object.keys(SEG_LABEL);
-  const grids = [{ left: 4, right: "54%", top: 30, bottom: 4, containLabel: true }, { left: "54%", right: 12, top: 30, bottom: 4, containLabel: true }];
+  const n = narrow();
+  // Phones stack the two panels; wider screens put them side by side.
+  const grids = n ? [{ left: 4, right: 12, top: 28, bottom: "56%", containLabel: true }, { left: 4, right: 12, top: "58%", bottom: 4, containLabel: true }]
+    : [{ left: 4, right: "54%", top: 30, bottom: 4, containLabel: true }, { left: "54%", right: 12, top: 30, bottom: 4, containLabel: true }];
   const series = [];
   outcomes.forEach(([key, , fmt], gi) => {
     const rows = segs.map((s) => D.pilot_did.find((r) => r.segment === s && r.outcome === key));
-    series.push({ type: "custom", xAxisIndex: gi, yAxisIndex: gi, silent: true, data: rows.map((r, i) => [i, r["CI low"], r["CI high"]]),
+    // encode keeps the row index off the value axis, so only the interval ends set its range.
+    series.push({ type: "custom", xAxisIndex: gi, yAxisIndex: gi, silent: true, encode: { x: [1, 2], y: 0 }, data: rows.map((r, i) => [i, r["CI low"], r["CI high"]]),
       renderItem: (params, api) => { const a = api.coord([api.value(1), api.value(0)]), b = api.coord([api.value(2), api.value(0)]);
         return { type: "line", shape: { x1: a[0], y1: a[1], x2: b[0], y2: b[1] }, style: { stroke: T.muted, lineWidth: 2, lineCap: "round" } }; } });
     series.push({ type: "scatter", xAxisIndex: gi, yAxisIndex: gi, name: key, symbolSize: 12, data: rows.map((r, i) => [r["DiD estimate"], i]),
@@ -771,20 +809,24 @@ register("did", () => {
   return base({
     grid: grids,
     legend: { show: false },
-    title: outcomes.map(([, t], i) => ({ text: t, left: i ? "54%" : 4, top: 0, textStyle: { fontSize: 12, fontWeight: 500, color: T.ink2, fontFamily: FONT } })),
+    title: outcomes.map(([, t], i) => ({ text: t, left: i && !n ? "54%" : 4, top: i && n ? "49%" : 0, textStyle: { fontSize: 12, fontWeight: 500, color: T.ink2, fontFamily: FONT } })),
     tooltip: { ...base().tooltip, trigger: "item", formatter: (p) => { const key = outcomes[p.seriesIndex >> 1][0]; const r = D.pilot_did.find((x) => x.segment === segs[p.value[1]] && x.outcome === key);
       return head(SEG_LABEL[r.segment]) + row(p.color, "Estimate", outcomes[p.seriesIndex >> 1][2](r["DiD estimate"]), "dot") + row(T.muted, "95% CI", `${r["CI low"].toFixed(2)} to ${r["CI high"].toFixed(2)}`, "dot") + row(T.muted, "p-value", r.p < 0.001 ? "< 0.001" : r.p.toFixed(3), "dot"); } },
-    xAxis: [yVal({ type: "value", gridIndex: 0 }), yVal({ type: "value", gridIndex: 1 })],
-    yAxis: [{ ...xCat(segs.map((s) => SEG_LABEL[s])), gridIndex: 0, axisLine: { show: false } }, { ...xCat(segs.map(() => "")), gridIndex: 1, axisLine: { show: false }, axisLabel: { show: false } }],
+    // Pad both ends so interval bars and value labels never touch the row labels.
+    xAxis: [0, 1].map((gi) => yVal({ type: "value", gridIndex: gi, ...padded() })),
+    yAxis: [{ ...xCat(segs.map((s) => SEG_LABEL[s])), gridIndex: 0, axisLine: { show: false } }, n ? { ...xCat(segs.map((s) => SEG_LABEL[s])), gridIndex: 1, axisLine: { show: false } }
+      : { ...xCat(segs.map(() => "")), gridIndex: 1, axisLine: { show: false }, axisLabel: { show: false } }],
     series,
   });
 }, () => ({ cols: [{ key: "segment", label: "Segment" }, { key: "outcome", label: "Outcome" }, { key: "DiD estimate", label: "Estimate", num: true, fmt: (v) => v.toFixed(2) },
-  { key: "CI low", label: "CI low", num: true, fmt: (v) => v.toFixed(2) }, { key: "CI high", label: "CI high", num: true, fmt: (v) => v.toFixed(2) }, { key: "p", label: "p", num: true, fmt: (v) => (v < 0.001 ? "<0.001" : v.toFixed(3)) }], rows: D.pilot_did }));
+  { key: "CI low", label: "CI low", num: true, fmt: (v) => v.toFixed(2) }, { key: "CI high", label: "CI high", num: true, fmt: (v) => v.toFixed(2) }, { key: "p", label: "p", num: true, fmt: (v) => (v < 0.001 ? "<0.001" : v.toFixed(3)) }], rows: D.pilot_did }),
+  { height: () => (narrow() ? 460 : undefined), responsive: true });
 
 const PARTNERS = () => D.partners.filter((p) => p.pid !== "Independent");
 register("partners", () => {
   const P = PARTNERS();
   const labelled = new Set(["ZipDrop", "FeastFly", "CargoTuk", "HaulKing", "ParcelNest", "Swiggle Go"]);
+  const maxRev = Math.max(...P.map((r) => r.revenue_m));
   return base({
     grid: { left: 4, right: 24, top: 20, bottom: 26, containLabel: true },
     legend: { show: false },
@@ -792,11 +834,11 @@ register("partners", () => {
       row(p.color, "Swaps", int(r.swaps), "dot") + row(T.muted, "Revenue", `₹${r.revenue_m.toFixed(1)}M`, "dot") + row(T.muted, "Discount / swap", inr(r.discount_per_swap), "dot") +
       row(T.muted, "CM1 / swap", inr(r.cm1), "dot") + row(T.muted, "CM2 / swap", inr(r.cm2), "dot") + row(T.muted, "Peak surcharge billed", r.peak_surcharge_billable === "Y" ? "Yes" : "No", "dot") +
       row(T.muted, "Payment terms", `${r.payment_terms_days} days`, "dot"); } },
-    xAxis: yVal({ type: "value", name: "Total revenue (₹ million)", nameLocation: "middle", nameGap: 28 }),
-    yAxis: yVal({ type: "value", scale: true, axisLabel: { color: T.muted, fontSize: 11, formatter: (v) => `₹${v}` } }),
+    xAxis: yVal({ type: "value", name: "Total revenue (₹ million)", nameLocation: "middle", nameGap: 28, ...padded({}, 0) }),
+    yAxis: yVal({ type: "value", scale: true, ...padded({ formatter: (v) => `₹${v}` }) }),
     series: [{ type: "scatter", data: P.map((r) => ({ value: [+r.revenue_m.toFixed(2), +r.cm1.toFixed(2)], symbolSize: Math.sqrt(r.swaps) / 13,
       itemStyle: { color: r.partner_name === "ZipDrop" ? T.s2 : T.s1, opacity: r.partner_name === "ZipDrop" ? 0.95 : 0.7, borderColor: T.surface, borderWidth: 2 },
-      label: { show: labelled.has(r.partner_name), formatter: r.partner_name, position: "right", distance: 6, color: T.ink2, fontSize: 11, fontWeight: r.partner_name === "ZipDrop" ? 700 : 400 } })),
+      label: { show: labelled.has(r.partner_name), formatter: r.partner_name, position: r.revenue_m > maxRev * 0.7 ? "left" : "right", distance: 6, color: T.ink2, fontSize: 11, fontWeight: r.partner_name === "ZipDrop" ? 700 : 400 } })),
       emphasis: { scale: 1.08, label: { show: true } } }],
   });
 }, () => ({ cols: [{ key: "partner_name", label: "Partner" }, { key: "swaps", label: "Swaps", num: true, fmt: (v) => int(v) }, { key: "revenue_m", label: "Revenue ₹M", num: true, fmt: (v) => v.toFixed(2) },
@@ -888,15 +930,15 @@ register("logit", () => {
   const rows = logitRows();
   const cats = rows.map((r) => termLabel(r.term));
   return base({
-    grid: { left: 4, right: 18, top: 10, bottom: 26, containLabel: true },
+    grid: { left: 14, right: 18, top: 10, bottom: 26, containLabel: true },
     legend: { show: false },
     tooltip: { ...base().tooltip, trigger: "item", formatter: (p) => { const r = rows[p.value[1]]; if (!r) return ""; return head(termLabel(r.term)) +
       row(p.color, "Coefficient", r.coef.toFixed(3), "dot") + row(T.muted, "Odds ratio", r.odds_ratio.toFixed(2), "dot") + row(T.muted, "95% CI", `${r.lo.toFixed(2)} to ${r.hi.toFixed(2)}`, "dot") +
       row(T.muted, "p-value", r.p < 0.001 ? "< 0.001" : r.p.toFixed(3), "dot"); } },
-    xAxis: yVal({ type: "value", name: "effect on log-odds of retention", nameLocation: "middle", nameGap: 28 }),
-    yAxis: { ...xCat(cats), axisLine: { show: false }, axisLabel: { color: T.ink2, fontSize: 11, interval: 0 } },
+    xAxis: yVal({ type: "value", name: narrow() ? "log-odds effect" : "effect on log-odds of retention", nameLocation: "middle", nameGap: 28 }),
+    yAxis: { ...xCat(cats), axisLine: { show: false }, axisLabel: { color: T.ink2, fontSize: 11, interval: 0, ...(narrow() ? { width: 140, overflow: "truncate", fontSize: 10.5 } : {}) } },
     series: [
-      { type: "custom", silent: true, data: rows.map((r, i) => [i, r.lo, r.hi, r.p < 0.05 ? 1 : 0]),
+      { type: "custom", silent: true, encode: { x: [1, 2], y: 0 }, data: rows.map((r, i) => [i, r.lo, r.hi, r.p < 0.05 ? 1 : 0]),
         renderItem: (params, api) => { const a = api.coord([api.value(1), api.value(0)]), b = api.coord([api.value(2), api.value(0)]);
           return { type: "line", shape: { x1: a[0], y1: a[1], x2: b[0], y2: b[1] }, style: { stroke: api.value(3) ? T.s2 : T.axis, lineWidth: 2, lineCap: "round" } }; } },
       { type: "scatter", symbolSize: 10, data: rows.map((r, i) => ({ value: [+r.coef.toFixed(3), i], itemStyle: { color: r.p < 0.05 ? T.s2 : T.muted, borderColor: T.surface, borderWidth: 2 } })),
@@ -904,7 +946,7 @@ register("logit", () => {
     ],
   });
 }, () => ({ cols: [{ key: "term", label: "Term", fmt: (v) => termLabel(v) }, { key: "coef", label: "Coef", num: true, fmt: (v) => v.toFixed(3) }, { key: "lo", label: "CI low", num: true, fmt: (v) => v.toFixed(3) },
-  { key: "hi", label: "CI high", num: true, fmt: (v) => v.toFixed(3) }, { key: "p", label: "p", num: true, fmt: (v) => (v < 0.001 ? "<0.001" : v.toFixed(3)) }], rows: logitRows() }), { height: 520 });
+  { key: "hi", label: "CI high", num: true, fmt: (v) => v.toFixed(3) }, { key: "p", label: "p", num: true, fmt: (v) => (v < 0.001 ? "<0.001" : v.toFixed(3)) }], rows: logitRows() }), { height: () => (narrow() ? 600 : 520), responsive: true });
 
 function factorSelect() {
   const sel = $("#factor-select");
@@ -974,17 +1016,36 @@ function quality() {
 }
 
 // ================= BOOT =================
+// Charts are built one per frame, well before they scroll into view, so several arriving together never stall scrolling.
+const renderQueue = [];
+let pumping = false;
+function queueRender(id) {
+  renderQueue.push(id);
+  if (!pumping) { pumping = true; requestAnimationFrame(pump); }
+}
+function pump() {
+  const id = renderQueue.shift();
+  if (id && !live.has(id)) render(id);
+  if (renderQueue.length) requestAnimationFrame(() => setTimeout(pump, 0));
+  else pumping = false;
+}
 function lazyCharts() {
   const io = new IntersectionObserver((entries) => entries.forEach((e) => {
     if (!e.isIntersecting) return;
     io.unobserve(e.target);
-    render(e.target.dataset.chart);
-  }), { rootMargin: "200px 0px" });
+    queueRender(e.target.dataset.chart);
+  }), { rootMargin: "600px 0px" });
   $$("[data-chart]").forEach((fig) => {
     const node = setupCard(fig);
-    new ResizeObserver(() => live.get(fig.dataset.chart)?.inst.resize()).observe(node);
+    new ResizeObserver(() => { const cur = live.get(fig.dataset.chart); if (cur) { cur.inst.resize(); fitLegend(fig.dataset.chart); } }).observe(node);
     io.observe(fig);
   });
+  NARROW_MQ.addEventListener("change", () => Object.keys(REG).filter((id) => REG[id].responsive).forEach((id) => {
+    const node = $(`[data-chart="${id}"] .chart`);
+    if (!node) return;
+    node.style.blockSize = chartHeight(id) ? `${chartHeight(id)}px` : "";
+    if (live.has(id)) render(id);
+  }));
 }
 function scrollSpy() {
   const links = new Map($$(".nav a").map((a) => [a.getAttribute("href").slice(1), a]));
@@ -996,10 +1057,25 @@ function scrollSpy() {
   hero.observe(document.getElementById("top"));
 }
 function reveal() {
-  $$(".insight, .card, .callout, .tier, .anomaly").forEach((n) => n.classList.add("reveal"));
+  $$(".insight, .card, .callout, .tier, .anomaly, .section-head").forEach((n) => n.classList.add("reveal"));
   if (REDUCED) { $$(".reveal").forEach((n) => n.classList.add("in")); return; }
-  const io = new IntersectionObserver((entries) => entries.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } }), { rootMargin: "0px 0px -8% 0px" });
+  // Items entering together cascade in 70 ms apart; the delay is cleared afterwards so hover effects stay instant.
+  const io = new IntersectionObserver((entries) => {
+    entries.filter((e) => e.isIntersecting).forEach(({ target: n }, i) => {
+      io.unobserve(n);
+      const d = Math.min(i, 5) * 70;
+      if (d) { n.style.transitionDelay = `${d}ms`; setTimeout(() => { n.style.transitionDelay = ""; }, d + 900); }
+      n.classList.add("in");
+      if (n.classList.contains("insight")) countNum($(".insight-num", n));
+    });
+  }, { rootMargin: "0px 0px -8% 0px" });
   $$(".reveal").forEach((n) => io.observe(n));
+}
+function countNum(node) {
+  const m = node?.textContent.match(/^(\d+(?:\.\d+)?)(.*)$/);
+  if (!m) return;
+  const dec = (m[1].split(".")[1] ?? "").length;
+  countUp(node, +m[1], (v) => `${v.toFixed(dec)}${m[2]}`);
 }
 // Segmented toggles: a thumb glides to the selected option, and arrow keys move the selection (radiogroup pattern).
 function segmented(group) {
@@ -1075,7 +1151,12 @@ function applyTheme() {
   document.documentElement.dataset.theme = next;
   try { localStorage.setItem("vr-theme", next); } catch (e) { /* storage unavailable */ }
   T = tokens();
-  [...live.keys()].forEach(render);
+  // Charts on screen switch at once; the rest are rebuilt through the render queue.
+  [...live.keys()].forEach((id) => {
+    const r = $(`[data-chart="${id}"]`).getBoundingClientRect();
+    if (r.bottom > -200 && r.top < innerHeight + 200) render(id);
+    else { live.get(id).inst.dispose(); live.delete(id); queueRender(id); }
+  });
   HEAT = heatRamp();
   fx?.repaint();
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", next === "dark" ? "#000000" : "#f1f2ee");
@@ -1250,15 +1331,19 @@ function spotlight() {
 
 function scrollUi() {
   const bar = $("#progress"), top = $("#to-top");
-  let queued = false;
+  let queued = false, h = 0;
+  // The scrollable height is cached: reading scrollHeight on every scroll frame forces a layout.
+  const measure = () => { h = document.documentElement.scrollHeight - innerHeight; };
+  new ResizeObserver(() => { measure(); update(); }).observe(document.body);
   const update = () => {
     queued = false;
-    const h = document.documentElement.scrollHeight - innerHeight;
     bar.style.transform = `scaleX(${h > 0 ? Math.min(1, scrollY / h) : 0})`;
     top.classList.toggle("show", scrollY > innerHeight * 0.9);
   };
   addEventListener("scroll", () => { if (!queued) { queued = true; requestAnimationFrame(update); } }, { passive: true });
   top.addEventListener("click", () => scrollTo({ top: 0, behavior: REDUCED ? "auto" : "smooth" }));
+  addEventListener("resize", measure, { passive: true });
+  measure();
   update();
 }
 

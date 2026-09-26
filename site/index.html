@@ -25,7 +25,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="dns-prefetch" href="https://tiles.openfreemap.org" />
   <link rel="preload" href="data.json?v=__V__" as="fetch" crossorigin="anonymous" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css?v=__V__" />
   <script>
     (function () {
@@ -74,7 +74,7 @@
     <section class="hero" id="top">
       <div class="hero-inner">
         <p class="eyebrow">Gradient Learnings Data Analytics Hackathon</p>
-        <h1>Growth hid two fixable failures.</h1>
+        <h1>Growth hid two <em>fixable</em> failures.</h1>
         <p class="lede">VoltRelay tripled its revenue in 18 months, but service failures grew almost six-fold and every swap still loses money after battery wear. The cause is not competition or demand. It is <strong>overheating Gen1 cabinets</strong> and <strong>three bad battery lots</strong>.</p>
         <ul class="chips" aria-label="Scope">
           <li>6 cities</li><li>Jan 2024 – Jun 2025</li><li>3.9M swap attempts</li><li>1.5M station-hours</li><li>20K riders</li>
@@ -92,27 +92,28 @@
       <p class="kpi-note">Monthly averages, Q2 2025 vs Q1 2024. Sparklines show all 18 months.</p>
     </section>
 
-    <section class="insights" aria-label="Key findings">
+    <section class="insights" aria-labelledby="insights-title">
+      <h2 class="sr-only" id="insights-title">Key findings</h2>
       <article class="insight">
         <div class="insight-icon heat" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M14 14.8V5a2 2 0 1 0-4 0v9.8a4 4 0 1 0 4 0z" /><path d="M12 18v-6" /></svg></div>
         <p class="insight-num">58%</p>
         <h3>of hot hours, Gen1 cabinets are empty</h3>
         <p>Above 40 °C, Gen1 charge time doubles. Delhi NCR, Jaipur and Hyderabad hold 36 of the 51 Gen1 cabinets, so failures triple there every summer.</p>
-        <a href="#stations" class="more">See the mechanism →</a>
+        <a href="#stations" class="more">See the mechanism <span class="arr" aria-hidden="true">→</span></a>
       </article>
       <article class="insight">
         <div class="insight-icon battery" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="16" height="10" rx="2" /><path d="M21 11v2M7 10v4M10.5 10v4" /></svg></div>
         <p class="insight-num">3×</p>
         <h3>faster wear in three Kyron battery lots</h3>
         <p>Lots KY-2407/08/09 cost ~₹45M in excess wear, wiped out the July 2024 price rise and cut delivered range.</p>
-        <a href="#batteries" class="more">See the battery cohorts →</a>
+        <a href="#batteries" class="more">See the battery cohorts <span class="arr" aria-hidden="true">→</span></a>
       </article>
       <article class="insight">
         <div class="insight-icon rider" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="7" r="3.5" /><path d="M5 21a7 7 0 0 1 14 0" /></svg></div>
         <p class="insight-num">65%</p>
         <h3>retention when over 20% of a new rider's first-fortnight attempts fail</h3>
         <p>vs ~87% for riders whose first two weeks go smoothly. Early stockouts and short range drive churn; competitors do not.</p>
-        <a href="#retention" class="more">See the churn drivers →</a>
+        <a href="#retention" class="more">See the churn drivers <span class="arr" aria-hidden="true">→</span></a>
       </article>
     </section>
 
@@ -300,14 +301,14 @@
       </header>
       <div class="anomalies" id="anomalies"></div>
       <figure class="card wide" data-chart="tickets"><figcaption><h3>Complaints in riders' own words</h3><p>Support tickets classified from free text (English and Hinglish). Every "other" ticket is a vague vehicle complaint, and those tickets point at the same bad battery lots as explicit range complaints.</p></figcaption></figure>
-      <div class="table-scroll card wide flat" id="cleaning"></div>
+      <div class="table-scroll card wide flat" id="cleaning" tabindex="0" role="region" aria-label="Data cleaning log"></div>
     </section>
   </main>
 
   <footer class="footer">
     <div class="footer-inner">
       <div>
-        <p class="brand-text"><strong>VoltRelay network analysis</strong></p>
+        <div class="footer-brand"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="vr-tile-f" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#16206a"/><stop offset="1" stop-color="#080b2c"/></linearGradient><linearGradient id="vr-bolt-f" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f1e3bd"/><stop offset="1" stop-color="#b8955a"/></linearGradient></defs><rect x=".5" y=".5" width="31" height="31" rx="8" fill="url(#vr-tile-f)" stroke="#c9a96e" stroke-opacity=".45"/><path d="M18.2 6.5 11 17.2h5l-2.2 8.3L21 14.8h-5z" fill="url(#vr-bolt-f)"/></svg></span><p class="brand-text"><strong>VoltRelay</strong><span>Network analysis</span></p></div>
         <p class="muted">Synthetic hackathon dataset (seed 59500). Findings are associations from observational data, backed by mechanisms that agree across telemetry, events, the battery ledger and support tickets.</p>
       </div>
       <nav class="footer-links" aria-label="Resources">
