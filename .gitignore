@@ -9,3 +9,14 @@ venv/
 # Raw hackathon data is ~1 GB and lives in Google Drive; fetch it with data/download_data.py
 data/raw/
 _site/
+
+# video build outputs
+video/*.mp3
+video/*.wav
+video/*.mp4
+video/frames/
+video/frames.bin
+video/frames.txt
+video/manifest.json
+video/timeline.json
+video/sentences.json

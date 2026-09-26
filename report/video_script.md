@@ -1,5 +1,7 @@
 # Three-minute video script
 
+**Rendered video:** [VoltRelay_3min_video.mp4](https://github.com/andringodson/Hackathon-DataAnalytics26/releases/download/video-v1/VoltRelay_3min_video.mp4), a narrated walkthrough of the live dashboard built from this script (see [`video/`](../video/README.md)).
+
 Presented as if to VoltRelay's operations and customer-experience leadership. About 430 words, roughly 3 minutes at a natural pace. Suggested visuals in *italics*. All charts are in `report/figures/`.
 
 ---
