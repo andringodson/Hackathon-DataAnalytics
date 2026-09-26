@@ -120,10 +120,10 @@ for ax, pt in zip(axes[:2], ["2W_2.1kWh", "3W_4.8kWh"]):
 mt = rng.groupby("month").agg(soh=("soh_in_pct", "mean"), km=("km_valid", "mean"))
 mt["bad_lot_share"] = comp.assign(bad=comp.battery_out_id.astype(str).isin(bt.loc[bt.cohort == "Kyron KY-2407..09", "battery_id"])).groupby("month").bad.mean()
 ax = axes[2]
-ax.plot(mt.index, mt.km, color=PAL["primary"], lw=2.2, label="km per swap"); ax.set_ylabel("km per swap")
-ax2 = ax.twinx(); ax2.plot(mt.index, mt.soh, color=PAL["accent"], lw=2.2, label="mean SoH of returned packs"); ax2.grid(False); ax2.set_ylabel("SoH %")
-ax.set_title("Network: delivered range fell 30% as the fleet aged"); ax.tick_params(axis="x", rotation=45)
-ax.legend(ax.get_lines() + ax2.get_lines(), ["km per swap", "mean SoH of returned packs"], loc="lower left", fontsize=8)
+ax.plot(mt.index, mt.km / mt.km.iloc[0] * 100, color=PAL["primary"], lw=2.2, label="km delivered per swap")
+ax.plot(mt.index, mt.soh / mt.soh.iloc[0] * 100, color=PAL["accent"], lw=2.2, label="mean SoH of returned packs")
+ax.set_ylabel("index, Jan 2024 = 100"); ax.set_title("Network: range fell 30%, faster than SoH (-23%)"); ax.tick_params(axis="x", rotation=45)
+ax.legend(loc="lower left", fontsize=8)
 save(fig, "08_range_vs_soh")
 mt.iloc[[0, 6, 9, 12, 17]].round(2)
 

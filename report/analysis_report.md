@@ -1,8 +1,10 @@
 # VoltRelay Energy: What Is Really Driving Service Quality, Retention and Margin
 
 **Analysis report · Gradient Learnings Data Analytics Hackathon**
+
 Data: 3.88M swap attempts, 1.49M station-hours, 20K riders, 6.5K batteries, 44K tickets · 6 cities · Jan 2024 – Jun 2025
-Full reproducible analysis: [`notebooks/VoltRelay_Analysis.ipynb`](../notebooks/VoltRelay_Analysis.ipynb)
+
+Full reproducible analysis: [VoltRelay_Analysis.ipynb](https://github.com/andringodson/Hackathon-DataAnalytics/blob/main/notebooks/VoltRelay_Analysis.ipynb) · Interactive dashboard: [voltrelay-analytics.streamlit.app](https://voltrelay-analytics.streamlit.app)
 
 ---
 

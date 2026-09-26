@@ -1,0 +1,27 @@
+level,riders,retention,factor
+0%,7350,0.8681632653061224,"Failure rate, first 14 days"
+0–5%,503,0.9184890656063618,"Failure rate, first 14 days"
+5–10%,3547,0.8832816464617987,"Failure rate, first 14 days"
+10–20%,1810,0.7883977900552486,"Failure rate, first 14 days"
+>20%,587,0.6541737649063032,"Failure rate, first 14 days"
+0,13151,0.857881529921679,First attempt failed
+1,646,0.781733746130031,First attempt failed
+<45,404,0.801980198019802,"km per swap, first 14 days"
+45–55,2239,0.8597588209021885,"km per swap, first 14 days"
+55–65,4962,0.860137041515518,"km per swap, first 14 days"
+65–75,3772,0.8589607635206787,"km per swap, first 14 days"
+>75,2416,0.8402317880794702,"km per swap, first 14 days"
+2W,11799,0.8584625815747097,Vehicle class
+3W,1998,0.8298298298298298,Vehicle class
+partner_billed,8459,0.845135358789455,Plan type
+pay_as_you_go,3730,0.8705093833780161,Plan type
+prepaid_pack,1608,0.8650497512437811,Plan type
+app_store,2922,0.8740588637919233,Signup channel
+field_agent,2836,0.846262341325811,Signup channel
+partner_onboarding,6432,0.8462375621890548,Signup channel
+referral,1607,0.864965774735532,Signup channel
+Gen1,7068,0.8456423316355405,Home station generation
+Gen2,5917,0.8646273449383133,Home station generation
+Gen3,812,0.854679802955665,Home station generation
+0,13583,0.854376794522565,Competitor within 1.5 km
+1,214,0.8504672897196262,Competitor within 1.5 km

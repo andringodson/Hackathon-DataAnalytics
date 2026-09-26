@@ -137,9 +137,9 @@ save(fig, "06_failure_mix")
 fig, axes = plt.subplots(1, 3, figsize=(16, 4))
 h = se.groupby("hour").agg(fail=("service_failure", "mean"), attempts=("event_id", "size"))
 ax = axes[0]
-ax.bar(h.index, h.attempts / 1e3, color="#d5dde5")
-ax2 = ax.twinx(); ax2.plot(h.index, h.fail, color=PAL["bad"], marker="o", lw=2); pct(ax2, decimals=1); ax2.grid(False)
-ax.set_title("By hour: evening peak fails most"); ax.set_xlabel("hour (corrected)"); ax.set_ylabel("attempts (000s)"); ax2.set_ylabel("failure rate")
+ax.plot(h.index, h.fail, color=PAL["bad"], marker="o", lw=2); pct(ax, decimals=1)
+ax.axvspan(18.5, 22.5, color=PAL["muted"], alpha=.12, lw=0)
+ax.set_title("By hour: evening peak (shaded) fails most"); ax.set_xlabel("hour (corrected)"); ax.set_ylabel("failure rate")
 mv = se.pivot_table(index="month", columns="vehicle_class", values="service_failure", aggfunc="mean")
 ax = axes[1]
 mv.plot(ax=ax, color=[PAL["primary"], PAL["accent"]], lw=2.2, marker="o", ms=3)

@@ -92,7 +92,7 @@ z = comp[comp.pid == "FP-03"].groupby("month").agg(discount=("discount_inr", "me
 ax = axes[1]
 ax.plot(z.index, z.discount, color=PAL["bad"], lw=2.2, marker="o", ms=3, label="discount per swap (₹)")
 ax.plot(z.index, z.cm1, color=PAL["primary"], lw=2.2, marker="o", ms=3, label="CM1 per swap (₹)")
-ax.axvline(pd.Timestamp("2024-11-01"), color="black", ls=":"); ax.legend(fontsize=8)
+ax.axvline(pd.Timestamp("2024-11-01"), color="black", ls=":"); ax.legend(fontsize=8); ax.tick_params(axis="x", rotation=45)
 ax.set_title("ZipDrop: the Nov 2024 amendment cut ~₹11 per swap overnight")
 save(fig, "09_partners")
 zz = comp[comp.pid.isin(["FP-03", "FP-01"]) & comp.month.between("2024-09-01", "2024-12-01")]
@@ -152,13 +152,13 @@ print(f"New riders: {len(new):,} | 30-59 day retention: {new.retained.mean():.1%
 
 # %%
 coh = new.groupby("first_month").agg(riders=("rider_id", "size"), retention=("retained", "mean"), early_fail=("fail_rate_14d", "mean"), early_km=("km_per_swap_14d", "mean"))
-fig, ax = plt.subplots(figsize=(13, 4))
-ax.plot(coh.index, coh.retention, color=PAL["primary"], lw=2.5, marker="o", label="30–59 day retention (left)")
-pct(ax, decimals=0); ax.set_ylabel("retention"); ax.set_ylim(.74, .93)
-ax2 = ax.twinx(); ax2.bar(coh.index, coh.early_fail, width=18, color=PAL["bad"], alpha=.35, label="failure rate in first 14 days (right)")
-pct(ax2, decimals=0); ax2.grid(False); ax2.set_ylim(0, .35)
+fig, (ax, ax2) = plt.subplots(2, 1, figsize=(13, 5.5), sharex=True, gridspec_kw={"height_ratios": [3, 2]})
+ax.plot(coh.index, coh.retention, color=PAL["primary"], lw=2.5, marker="o")
+pct(ax, decimals=0); ax.set_ylabel("30–59 day retention")
 ax.set_title("New-rider cohorts: retention falls exactly when early failures spike")
-h1, l1 = ax.get_legend_handles_labels(); h2, l2 = ax2.get_legend_handles_labels(); ax.legend(h1 + h2, l1 + l2, loc="upper center", ncol=2, fontsize=8)
+ax2.bar(coh.index, coh.early_fail, width=18, color=PAL["bad"])
+pct(ax2, decimals=1); ax2.set_ylabel("early failure rate"); ax2.set_xlabel("month of first swap")
+fig.tight_layout()
 save(fig, "10_cohort_retention")
 print("Correlation across monthly cohorts, retention vs early failure:", round(coh.retention.corr(coh.early_fail), 3))
 coh.round(3)

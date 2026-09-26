@@ -1,0 +1,7 @@
+Anomaly,Evidence,Suggested action
+Test stations STN-TST-01/02,"62K events, ₹3.9M revenue over 18 months at 'inactive' test sites",Reconcile revenue; confirm whether these are live sites
+Firmware v3.2.0 clock bug,"139,490 events logged 5h30m early (10 Mar–14 Apr 2025)",Corrected here; audit any hour-based billing (PEAK) in that window
+Kyron lots KY-2407/08/09,~3× normal degradation; ~61% SoH within a year,Warranty claim; inspect the remaining packs
+'Retired' packs still in service,22% of swaps after 15 Jun 2025 issued a pack the ledger marks retired,Asset-ledger error or end-of-life packs in circulation (safety risk)
+Battery IDs in two places at once,Same pack issued at different stations minutes apart; packs issued before their commission date (27.7% of swaps),Fix pack-ID capture at the cabinet
+Gen1 cabinets above 40 °C,Stocked out in ~58% of hot hours; charge time ~174 min,Priority equipment upgrade
