@@ -48,7 +48,7 @@ const GEN = () => ({ Gen1: T.s2, Gen2: T.s1, Gen3: T.s3 });
 // ---------- shared chart pieces ----------
 function base(extra = {}) {
   return {
-    animation: !REDUCED, animationDuration: 700, animationEasing: "cubicOut",
+    animation: !REDUCED, animationDuration: 700, animationEasing: "cubicOut", animationDurationUpdate: 650, animationEasingUpdate: "cubicInOut",
     textStyle: { fontFamily: FONT, color: T.ink2 },
     grid: { left: 4, right: 18, top: 40, bottom: 4, containLabel: true },
     tooltip: {
@@ -122,8 +122,11 @@ function setupCard(fig) {
   tBtn.addEventListener("click", () => {
     const open = tBtn.getAttribute("aria-pressed") === "true";
     tBtn.setAttribute("aria-pressed", String(!open));
-    if (open) tableBox.hidden = true;
-    else { tableBox.replaceChildren(buildTable(REG[id].table())); tableBox.hidden = false; }
+    if (open && REDUCED) tableBox.hidden = true;
+    else if (open) {
+      tableBox.animate([{ opacity: 1 }, { opacity: 0, transform: "translateY(-6px)" }], { duration: 180, easing: "ease-in" }).finished
+        .then(() => { if (tBtn.getAttribute("aria-pressed") === "false") tableBox.hidden = true; });
+    } else { tableBox.replaceChildren(buildTable(REG[id].table())); tableBox.hidden = false; }
   });
   cBtn.addEventListener("click", () => downloadCsv(REG[id].table(), `voltrelay-${id}.csv`));
   return chart;
@@ -140,7 +143,19 @@ function render(id) {
   const box = $(".table-view", fig);
   if (!box.hidden) box.replaceChildren(buildTable(REG[id].table()));
 }
-const refresh = (...ids) => ids.forEach((id) => live.has(id) && render(id));
+// Filters update the live chart in place, so ECharts morphs the marks to their new values instead of redrawing from zero.
+// Series that can come and go carry an id; replaceMerge drops the ones missing from the new option.
+function refresh(...ids) {
+  ids.forEach((id) => {
+    const cur = live.get(id);
+    if (!cur) return;
+    const node = cur.inst.getDom();
+    if (!REDUCED) { node.classList.add("swapping"); setTimeout(() => node.classList.remove("swapping"), 160); }
+    cur.inst.setOption(REG[id].option(), { replaceMerge: ["series"] });
+    const box = $(".table-view", node.closest("[data-chart]"));
+    if (!box.hidden) box.replaceChildren(buildTable(REG[id].table()));
+  });
+}
 
 function buildTable({ cols, rows }) {
   const t = el("table");
@@ -270,7 +285,7 @@ register("heatmap", () => {
     xAxis: xCat(months, { splitArea: { show: false } }), yAxis: { ...xCat(cities), axisLine: { show: false } },
     visualMap: { min: Math.min(...vals), max: Math.max(...vals), calculable: false, orient: "vertical", right: 0, top: "middle", itemHeight: 160, itemWidth: 10,
       inRange: { color: T.ramp }, text: ["high", "low"], textStyle: { color: T.muted, fontSize: 11 }, formatter: (v) => pct(v, 0) },
-    series: [{ type: "heatmap", data, itemStyle: { borderColor: T.surface, borderWidth: 2, borderRadius: 3 }, emphasis: { itemStyle: { borderColor: T.ink, borderWidth: 1 } } }],
+    series: [{ id: "cells", type: "heatmap", data, itemStyle: { borderColor: T.surface, borderWidth: 2, borderRadius: 3 }, emphasis: { itemStyle: { borderColor: T.ink, borderWidth: 1 } } }],
   });
 }, () => ({ cols: [{ key: "month", label: "Month" }, { key: "city", label: "City" }, { key: "attempts", label: "Attempts", num: true }, { key: "failure_rate", label: "Failure rate", num: true, fmt: (v) => pct(v) }], rows: mcRows() }), { height: 300 });
 
@@ -526,9 +541,9 @@ function exportMapPng() {
     const txt = "© OpenStreetMap contributors · OpenFreeMap · VoltRelay network analysis";
     ctx.font = `${11 * dpr}px Inter, system-ui, sans-serif`;
     const w = ctx.measureText(txt).width;
-    ctx.fillStyle = isDark() ? "rgba(26,26,25,0.85)" : "rgba(252,252,251,0.88)";
+    ctx.fillStyle = isDark() ? "rgba(6,7,18,0.85)" : "rgba(252,252,251,0.88)";
     ctx.fillRect(c.width - w - 16 * dpr, c.height - 22 * dpr, w + 16 * dpr, 22 * dpr);
-    ctx.fillStyle = isDark() ? "#c3c2b7" : "#52514e";
+    ctx.fillStyle = isDark() ? "#c3c6da" : "#52514e";
     ctx.fillText(txt, c.width - w - 8 * dpr, c.height - 7 * dpr);
     c.toBlob((blob) => {
       const a = el("a", { href: URL.createObjectURL(blob), download: `voltrelay-station-map-${mapMode}.png` });
@@ -693,7 +708,7 @@ register("range", () => {
     tooltip: { ...base().tooltip, trigger: "axis", axisPointer: { type: "line", lineStyle: { color: T.muted } }, formatter: axisTip((v) => `${v.toFixed(1)} km`) },
     xAxis: xCat(SOH, { boundaryGap: false, name: "SoH of returned pack (%)", nameLocation: "middle", nameGap: 28, nameTextStyle: { color: T.muted, fontSize: 11 } }),
     yAxis: yVal({ scale: true }),
-    series: cohorts.map((c) => line(COHORT_LABEL[c], SOH.map((b) => rows.find((r) => r.cohort === c && r.soh_band === b)?.mean ?? null), colors[c], { showSymbol: true })),
+    series: cohorts.map((c) => line(COHORT_LABEL[c], SOH.map((b) => rows.find((r) => r.cohort === c && r.soh_band === b)?.mean ?? null), colors[c], { showSymbol: true, id: c })),
   });
 }, () => ({ cols: [{ key: "pack_type", label: "Pack" }, { key: "cohort", label: "Cohort" }, { key: "soh_band", label: "SoH band" },
   { key: "mean", label: "km per swap", num: true, fmt: (v) => v.toFixed(1) }, { key: "size", label: "Swaps", num: true, fmt: (v) => int(v) }], rows: D.range_vs_soh.filter((r) => r.pack_type === state.pack) }));
@@ -848,7 +863,7 @@ register("lift", () => {
     xAxis: xCat(rows.map((r) => String(r.level).replace(/_/g, " "))),
     yAxis: yVal({ min: 0, max: 1, axisLabel: { color: T.muted, fontSize: 11, formatter: (v) => pct(v, 0) } }),
     series: [bar("Retention", rows.map((r) => r.retention), T.s1, {
-      label: { show: true, position: "top", color: T.ink, fontSize: 11, fontWeight: 600, formatter: (p) => pct(p.value, 0) },
+      id: "retention", label: { show: true, position: "top", color: T.ink, fontSize: 11, fontWeight: 600, formatter: (p) => pct(p.value, 0) },
       markLine: markLines([{ yAxis: overall, label: { formatter: "all new riders 85%", position: "insideEndTop", color: T.ink2, fontSize: 10.5 }, lineStyle: { color: T.muted, width: 1, type: "solid" } }]) })],
   });
 }, () => ({ cols: [{ key: "factor", label: "Factor" }, { key: "level", label: "Level" }, { key: "riders", label: "Riders", num: true, fmt: int }, { key: "retention", label: "Retention", num: true, fmt: (v) => pct(v) }], rows: liftRows() }));
@@ -986,26 +1001,93 @@ function reveal() {
   const io = new IntersectionObserver((entries) => entries.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } }), { rootMargin: "0px 0px -8% 0px" });
   $$(".reveal").forEach((n) => io.observe(n));
 }
-function themeToggle() {
-  $("#theme-toggle").addEventListener("click", () => {
-    const next = isDark() ? "light" : "dark";
-    document.documentElement.dataset.theme = next;
-    try { localStorage.setItem("vr-theme", next); } catch (e) { /* storage unavailable */ }
-    T = tokens();
-    [...live.keys()].forEach(render);
-    HEAT = heatRamp();
-    fx?.repaint();
-    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", next === "dark" ? "#000000" : "#f1f2ee");
-    if (map) {
-      map.stop();
-      popup?.remove();
-      hoverId = null;
-      ALL_LAYERS.forEach((id) => map.getLayer(id) && map.removeLayer(id));
-      ["stations", "columns", "cities", "city-columns"].forEach((id) => map.getSource(id) && map.removeSource(id));
-      map.setStyle(MAP_STYLE(), { diff: false });
+// Segmented toggles: a thumb glides to the selected option, and arrow keys move the selection (radiogroup pattern).
+function segmented(group) {
+  const btns = $$("button", group);
+  const thumb = el("span", { class: "seg-thumb", "aria-hidden": "true" });
+  group.prepend(thumb);
+  group.classList.add("has-thumb");
+  const place = () => {
+    const b = btns.find((x) => x.getAttribute("aria-checked") === "true");
+    btns.forEach((x) => { x.tabIndex = x === b ? 0 : -1; });
+    if (!b) return;
+    group.style.setProperty("--seg-x", `${b.offsetLeft}px`);
+    group.style.setProperty("--seg-w", `${b.offsetWidth}px`);
+  };
+  btns.forEach((b, i) => b.addEventListener("keydown", (e) => {
+    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+    if (!step) return;
+    e.preventDefault();
+    const n = btns[(i + step + btns.length) % btns.length];
+    n.focus(); n.click();
+  }));
+  thumb.style.transition = "none";
+  place();
+  thumb.getBoundingClientRect();
+  thumb.style.transition = "";
+  new MutationObserver(place).observe(group, { subtree: true, attributeFilter: ["aria-checked"] });
+  new ResizeObserver(place).observe(group);
+}
+
+// Section nav: one pill slides to the active link, and the strip scrolls to keep it in view on narrow screens.
+function navInk() {
+  const nav = $(".nav");
+  const links = $$("a", nav);
+  const ink = el("span", { class: "nav-ink", "aria-hidden": "true" });
+  nav.prepend(ink);
+  nav.classList.add("has-ink");
+  let current = null;
+  const place = (scroll) => {
+    const a = links.find((x) => x.classList.contains("active"));
+    ink.classList.toggle("on", !!a);
+    if (!a) return;
+    if (!current) ink.style.transition = "none";
+    ink.style.setProperty("--ink-x", `${a.offsetLeft}px`);
+    ink.style.setProperty("--ink-w", `${a.offsetWidth}px`);
+    ink.style.setProperty("--ink-y", `${a.offsetTop}px`);
+    ink.style.setProperty("--ink-h", `${a.offsetHeight}px`);
+    if (!current) { ink.getBoundingClientRect(); ink.style.transition = ""; }
+    if (scroll && a !== current && nav.scrollWidth > nav.clientWidth + 4) {
+      nav.scrollTo({ left: a.offsetLeft - (nav.clientWidth - a.offsetWidth) / 2, behavior: REDUCED ? "auto" : "smooth" });
     }
-    worstStations();
+    current = a;
+  };
+  const mo = new MutationObserver(() => place(true));
+  links.forEach((a) => mo.observe(a, { attributeFilter: ["class"] }));
+  new ResizeObserver(() => place(false)).observe(nav);
+  document.fonts?.ready.then(() => place(false));
+}
+
+function themeToggle() {
+  const btn = $("#theme-toggle");
+  btn.addEventListener("click", () => {
+    if (!document.startViewTransition || REDUCED) return applyTheme();
+    // The new theme spreads out from the toggle as a circle (View Transitions API; other browsers switch instantly).
+    const r = btn.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2, s = document.documentElement.style;
+    s.setProperty("--vt-x", `${x}px`);
+    s.setProperty("--vt-y", `${y}px`);
+    s.setProperty("--vt-r", `${Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y))}px`);
+    document.startViewTransition(applyTheme);
   });
+}
+function applyTheme() {
+  const next = isDark() ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem("vr-theme", next); } catch (e) { /* storage unavailable */ }
+  T = tokens();
+  [...live.keys()].forEach(render);
+  HEAT = heatRamp();
+  fx?.repaint();
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", next === "dark" ? "#000000" : "#f1f2ee");
+  if (map) {
+    map.stop();
+    popup?.remove();
+    hoverId = null;
+    ALL_LAYERS.forEach((id) => map.getLayer(id) && map.removeLayer(id));
+    ["stations", "columns", "cities", "city-columns"].forEach((id) => map.getSource(id) && map.removeSource(id));
+    map.setStyle(MAP_STYLE(), { diff: false });
+  }
+  worstStations();
 }
 function packToggle() {
   $$("#pack-toggle button").forEach((b) => b.addEventListener("click", () => {
@@ -1026,16 +1108,17 @@ function backgroundFx() {
   const m = { x: innerWidth * 0.7, y: innerHeight * 0.25, tx: innerWidth * 0.7, ty: innerHeight * 0.25, on: false, e: 0 };
   let W = 0, H = 0, parts = [], raf = 0;
   const LB = [[], [], [], []], CB = [[], [], [], []], DB = Array.from({ length: 9 }, () => []);
+  // Deep royal: sapphire, midnight navy and amethyst glows, with sparse champagne-gold stars.
   const palette = () => (isDark()
-    ? { blobs: ["rgba(29,43,160,0.55)", "rgba(88,40,170,0.48)", "rgba(12,24,98,0.62)", "rgba(120,40,150,0.34)"], glow: "rgba(82,100,255,0.34)",
-        dots: ["#7d92ff", "#a98bff", "#d4b36a"], line: "125,145,255", dotAlpha: 0.9 }
-    : { blobs: ["rgba(65,105,225,0.16)", "rgba(120,81,169,0.14)", "rgba(29,43,143,0.10)", "rgba(155,120,220,0.12)"], glow: "rgba(65,105,225,0.16)",
-        dots: ["#3b5bdb", "#7048e8", "#b08a2e"], line: "59,91,219", dotAlpha: 0.55 });
+    ? { blobs: ["rgba(22,34,128,0.52)", "rgba(58,24,118,0.44)", "rgba(8,14,70,0.64)", "rgba(74,26,104,0.30)"], glow: "rgba(38,54,168,0.30)",
+        dots: ["#5b6fd8", "#8467c9", "#c9a96e"], line: "92,110,210", dotAlpha: 0.78 }
+    : { blobs: ["rgba(31,58,147,0.14)", "rgba(75,42,140,0.12)", "rgba(20,32,110,0.09)", "rgba(96,60,150,0.10)"], glow: "rgba(31,58,147,0.13)",
+        dots: ["#1f3a93", "#4b2a8c", "#9c7a2e"], line: "31,58,147", dotAlpha: 0.5 });
   let P = palette();
 
   function seed(n) {
     parts = Array.from({ length: n }, () => ({ x: Math.random() * W, y: Math.random() * H, vx: (Math.random() - 0.5) * 0.3, vy: (Math.random() - 0.5) * 0.3,
-      r: 0.7 + Math.random() * 1.6, k: Math.random() < 0.12 ? 2 : Math.random() < 0.55 ? 0 : 1, ph: Math.random() * 6.283 }));
+      r: 0.7 + Math.random() * 1.6, k: Math.random() < 0.08 ? 2 : Math.random() < 0.6 ? 0 : 1, ph: Math.random() * 6.283 }));
   }
   function resize() {
     const oldW = W;
@@ -1099,14 +1182,14 @@ function backgroundFx() {
     c.lineWidth = 1;
     LB.forEach((pts, b) => {
       if (!pts.length) return;
-      c.strokeStyle = `rgba(${P.line},${(0.05 * (b + 1)).toFixed(2)})`;
+      c.strokeStyle = `rgba(${P.line},${(0.045 * (b + 1)).toFixed(3)})`;
       c.beginPath();
       for (let k = 0; k < pts.length; k += 4) { c.moveTo(pts[k], pts[k + 1]); c.lineTo(pts[k + 2], pts[k + 3]); }
       c.stroke();
     });
     CB.forEach((pts, b) => {
       if (!pts.length) return;
-      c.strokeStyle = `rgba(${P.line},${(0.14 * (b + 1)).toFixed(2)})`;
+      c.strokeStyle = `rgba(${P.line},${(0.12 * (b + 1)).toFixed(2)})`;
       c.beginPath();
       for (let k = 0; k < pts.length; k += 2) { c.moveTo(pts[k], pts[k + 1]); c.lineTo(m.x, m.y); }
       c.stroke();
@@ -1198,6 +1281,8 @@ lazyCharts();
 packToggle();
 themeToggle();
 scrollSpy();
+navInk();
+$$(".segmented").forEach(segmented);
 reveal();
 mapControls();
 spotlight();
