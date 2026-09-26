@@ -27,7 +27,7 @@ VoltRelay runs a battery-swapping network for electric two- and three-wheelers i
 |---|---|---|
 | **Colab notebook** | Data understanding, cleaning, EDA, all six core questions and five deep dives. Runs top to bottom. | [Open in Colab](https://colab.research.google.com/github/andringodson/Hackathon-DataAnalytics26/blob/main/notebooks/VoltRelay_Analysis.ipynb) · [`.ipynb`](notebooks/VoltRelay_Analysis.ipynb) |
 | **Analysis report** | Problem, approach, insights, visuals, findings and recommendations. | [Markdown](report/analysis_report.md) · [PDF](report/analysis_report.pdf) |
-| **Three-minute video** | Narrated walkthrough of the live dashboard, following the script, with captions. 1080p, 2:58. | [Watch / download](https://github.com/andringodson/Hackathon-DataAnalytics26/releases/download/video-v1/VoltRelay_3min_video.mp4) · [script](report/video_script.md) · [how it's made](video/README.md) |
+| **Three-minute video** | Narrated walkthrough of the live dashboard, following the script, with captions, score and sound design. 4K, 2:58. | [Watch / download](https://github.com/andringodson/Hackathon-DataAnalytics26/releases/download/video-v1/VoltRelay_3min_video.mp4) · [script](report/video_script.md) · [how it's made](video/README.md) |
 | **Interactive dashboard** (bonus) | The whole analysis as an explorable web app. See [below](#the-interactive-dashboard). | [andringodson.github.io/Hackathon-DataAnalytics26](https://andringodson.github.io/Hackathon-DataAnalytics26/) |
 
 ## Key findings
