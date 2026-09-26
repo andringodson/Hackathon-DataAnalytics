@@ -4,10 +4,6 @@
 
 <h1 align="center">VoltRelay Energy: Battery-Swap Network Analysis</h1>
 
-<p align="center">
-  Why failures, churn and margins moved the way they did across 3.9M battery swaps, and what to fund next.<br>
-  A submission for the <strong>Gradient Learnings Data Analytics Hackathon</strong>.
-</p>
 
 <p align="center">
   <a href="https://andringodson.github.io/Hackathon-DataAnalytics26/"><img src="https://img.shields.io/badge/dashboard-live-1f3a93?style=flat" alt="Live dashboard"></a>
