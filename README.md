@@ -74,10 +74,12 @@ report/
   video_script.md            three-minute presentation script
   figures/                   all charts, exported by the notebook
 site/
-  index.html, styles.css, app.js   the hosted dashboard (no build step, no framework)
+  index.html                 the hosted dashboard (plain HTML/CSS/JS, no framework or bundler)
+  styles.css, app.js         design, transitions, charts and map
   build.py                   packs data/processed into data.json and versions the assets
-  sw.js, manifest.webmanifest      offline cache and install metadata
-  logo.svg, icon-*.png, og.png     logo, app icons and link-preview image
+  sw.js, manifest.webmanifest   offline cache and install metadata
+  logo.svg, icon-*.png       logo and app icons
+  og.png                     link-preview image
 dashboard/app.py             Streamlit version of the dashboard
 data/
   download_data.py           fetches the eight raw CSVs (~830 MB) from the organiser's Drive
