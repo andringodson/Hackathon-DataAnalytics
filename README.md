@@ -1,7 +1,7 @@
 # VoltRelay Energy — Battery-Swap Network Analysis
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/andringodson/Hackathon-DataAnalytics/blob/main/notebooks/VoltRelay_Analysis.ipynb)
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://voltrelay-analytics.streamlit.app)
+[![Dashboard](https://img.shields.io/badge/dashboard-live-2a78d6)](https://andringodson.github.io/Hackathon-DataAnalytics/)
 
 Submission for the **Gradient Learnings Data Analytics Hackathon**: an investigation of what drives service failures, new-rider churn and eroding margins on VoltRelay's battery-swapping network for electric 2W/3W riders (6 Indian cities, Jan 2024 – Jun 2025, 3.9M swap attempts).
 
@@ -12,7 +12,7 @@ Submission for the **Gradient Learnings Data Analytics Hackathon**: an investiga
 | **Colab notebook**: data understanding, cleaning, EDA, analysis of all six core questions and five deep dives; runs top to bottom | [`notebooks/VoltRelay_Analysis.ipynb`](notebooks/VoltRelay_Analysis.ipynb) · [open in Colab](https://colab.research.google.com/github/andringodson/Hackathon-DataAnalytics/blob/main/notebooks/VoltRelay_Analysis.ipynb) |
 | **Analysis report**: problem, approach, insights, visuals, findings, recommendations | [`report/analysis_report.md`](report/analysis_report.md) · [PDF](report/analysis_report.pdf) |
 | **Three-minute video**: script and suggested visuals | [`report/video_script.md`](report/video_script.md) |
-| **Interactive dashboard** (bonus) | [voltrelay-analytics.streamlit.app](https://voltrelay-analytics.streamlit.app) |
+| **Interactive dashboard** (bonus) | [andringodson.github.io/Hackathon-DataAnalytics](https://andringodson.github.io/Hackathon-DataAnalytics/) (Streamlit via stlite on GitHub Pages; first load ~20 s) |
 
 ## Key findings
 
@@ -36,6 +36,8 @@ report/
   video_script.md            three-minute presentation script
   figures/                   all charts, exported by the notebook
 dashboard/app.py             Streamlit dashboard
+site/                        stlite loader + build script: runs the dashboard in the browser on GitHub Pages
+.github/workflows/pages.yml  deploys the dashboard to GitHub Pages on every push
 data/
   download_data.py           fetches the eight raw CSVs (~830 MB) from the organiser's Drive
   processed/                 small aggregated tables exported by the notebook (dashboard input)

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VoltRelay Network Analysis</title>
+  <meta name="description" content="Interactive dashboard: what drives service failures, new-rider churn and margin erosion on VoltRelay's battery-swap network." />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@stlite/browser@1.9.2/build/stlite.css" />
+  <style>
+    :root { --bg: #fcfcfb; --ink: #52514e; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #1a1a19; --ink: #c3c2b7; } }
+    html, body { margin: 0; background: var(--bg); }
+    #boot { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink); padding: 48px 16px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div id="root"><div id="boot">Loading the dashboard — Python starts inside your browser, so the first load takes 15–30 seconds…</div></div>
+  <script type="module">
+    import { mount } from "https://cdn.jsdelivr.net/npm/@stlite/browser@1.9.2/build/stlite.js";
+    const manifest = await (await fetch("./manifest.json")).json();
+    const files = Object.fromEntries(manifest.map((p) => [p, { url: `./${p}` }]));
+    mount({ requirements: ["plotly>=5.24"], entrypoint: "dashboard/app.py", files, streamlitConfig: { "client.toolbarMode": "viewer" } },
+          document.getElementById("root"));
+  </script>
+</body>
+</html>
