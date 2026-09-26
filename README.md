@@ -36,7 +36,7 @@ report/
   video_script.md            three-minute presentation script
   figures/                   all charts, exported by the notebook
 dashboard/app.py             Streamlit dashboard
-site/                        hosted dashboard (HTML/CSS/JS, ECharts + Leaflet); build.py packs data/processed into data.json
+site/                        hosted dashboard (HTML/CSS/JS, ECharts, MapLibre GL with free OpenFreeMap vector tiles, no API keys); build.py packs data/processed into data.json
 .github/workflows/pages.yml  deploys the dashboard to GitHub Pages on every push
 data/
   download_data.py           fetches the eight raw CSVs (~830 MB) from the organiser's Drive

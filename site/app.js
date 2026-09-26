@@ -296,32 +296,279 @@ register("eventmix", () => {
   });
 }, () => ({ cols: [{ key: "month", label: "Month" }, ...OUTCOMES.map(([k, n]) => ({ key: k, label: n, num: true, fmt: (v) => pct(v, 2) }))], rows: D.event_mix_monthly }));
 
-// ---- map + worst stations ----
-let map, tiles, markers = [];
-function tileUrl() { return `https://{s}.basemaps.cartocdn.com/${isDark() ? "dark_all" : "rastertiles/voyager"}/{z}/{x}/{y}{r}.png`; }
-function initMap() {
-  if (!window.L) return;
-  map = L.map("station-map", { scrollWheelZoom: false, zoomControl: true, attributionControl: true });
-  tiles = L.tileLayer(tileUrl(), { maxZoom: 14, subdomains: "abcd", attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>' }).addTo(map);
-  drawMarkers();
-  const lg = $("#map-legend");
-  lg.replaceChildren(...Object.entries(GEN()).map(([g, c]) => el("span", {}, el("i", { class: "swatch", style: `background:${c}` }), `${g} cabinets`)),
-    el("span", { text: "Larger circle = higher failure rate" }));
+// ---- map: MapLibre GL + OpenFreeMap vector tiles (open source, no API key, no usage limits) ----
+let map = null, mapMode = "points", popup = null, hoverId = null, mapFitted = false;
+const MAP_STYLE = () => `https://tiles.openfreemap.org/styles/${isDark() ? "dark" : "positron"}`;
+// Sequential ramp: on a dark basemap high values must be the brightest, so the ramp runs the other way.
+const heatRamp = () => (isDark() ? ["rgba(217,89,38,0)", "#4a1c0b", "#7f3113", "#b8431a", "#e0622f", "#f59a70", "#fde0d2"]
+  : ["rgba(235,104,52,0)", "#fde0d2", "#f7b596", "#f08a5d", "#eb6834", "#b8431a", "#7a2a0e"]);
+let HEAT = heatRamp();
+const WAVE_NAME = { Launch: "Launch network", Wave1_2024H2: "Wave 1 (2024 H2)", Wave2_2025H1: "Wave 2 (2025 H1)" };
+const mapRows = () => D.stations.filter((s) => state.cities.has(s.city));
+const stationById = (id) => D.stations.find((s) => s.station_id === id);
+
+const CITY_ZOOM = 6.6;
+// Label side per city, chosen so neighbouring cities (Delhi/Jaipur, Mumbai/Pune) never label each other's bubble.
+const LABEL_SIDE = { "Delhi NCR": "left", Jaipur: "right", Mumbai: "right", Pune: "left", Hyderabad: "left", Bengaluru: "left" };
+const mapPadding = () => { const w = map.getContainer().clientWidth, s = w < 600 ? 28 : 70; return { top: 80, bottom: w < 600 ? 170 : 150, left: s, right: s + 10 }; };
+const pointsFC = (rows) => ({ type: "FeatureCollection", features: rows.map((s, i) => ({ type: "Feature", id: i, geometry: { type: "Point", coordinates: [s.longitude, s.latitude] },
+  properties: { id: s.station_id, gen: s.charger_generation, fr: s.failure_rate_all } })) });
+function hexagon(lon, lat, km) {
+  const dLat = km / 110.574, dLon = km / (111.32 * Math.cos((lat * Math.PI) / 180));
+  return [[...Array(7).keys()].map((j) => { const a = (Math.PI / 3) * j + Math.PI / 6; return [lon + dLon * Math.cos(a), lat + dLat * Math.sin(a)]; })];
 }
-function drawMarkers() {
-  if (!map) return;
-  markers.forEach((m) => m.remove());
-  const rows = D.stations.filter((s) => state.cities.has(s.city));
+const stationColsFC = (rows) => ({ type: "FeatureCollection", features: rows.map((s, i) => ({ type: "Feature", id: i, geometry: { type: "Polygon", coordinates: hexagon(s.longitude, s.latitude, 1.4) },
+  properties: { id: s.station_id, gen: s.charger_generation, fr: s.failure_rate_all, h: s.failure_rate_all * 140000 } })) });
+function cityAgg(rows) {
+  const by = new Map();
+  for (const s of rows) {
+    const c = by.get(s.city) ?? { city: s.city, lon: 0, lat: 0, n: 0, gen1: 0, attempts: 0, failures: 0, spd: 0 };
+    c.lon += s.longitude; c.lat += s.latitude; c.n += 1; c.gen1 += s.charger_generation === "Gen1" ? 1 : 0;
+    c.attempts += s.attempts; c.failures += s.failures; c.spd += s.swaps_per_day ?? 0;
+    by.set(s.city, c);
+  }
+  return [...by.values()].map((c) => ({ ...c, lon: c.lon / c.n, lat: c.lat / c.n, fr: c.failures / c.attempts }));
+}
+const citiesFC = (rows) => ({ type: "FeatureCollection", features: cityAgg(rows).map((c, i) => ({ type: "Feature", id: i, geometry: { type: "Point", coordinates: [c.lon, c.lat] },
+  properties: { city: c.city, fr: c.fr, attempts: c.attempts, label: `${pct(c.fr)} failed`, side: LABEL_SIDE[c.city] ?? "left" } })) });
+const cityColsFC = (rows) => ({ type: "FeatureCollection", features: cityAgg(rows).map((c, i) => ({ type: "Feature", id: i, geometry: { type: "Polygon", coordinates: hexagon(c.lon, c.lat, 38) },
+  properties: { city: c.city, fr: c.fr, h: c.fr * 4200000 } })) });
+
+const heatColor = (prop) => ["interpolate", ["linear"], ["get", prop], 0.035, HEAT[2], 0.055, HEAT[4], 0.075, HEAT[6]];
+const LAYERS = { points: ["city-bubbles", "city-labels", "st-dots"], heat: ["st-heat", "st-dots"], columns: ["city-cols", "st-cols"] };
+const ALL_LAYERS = ["st-heat", "city-cols", "st-cols", "city-bubbles", "city-labels", "st-dots"];
+
+function addStationLayers() {
+  const rows = mapRows(), gen = GEN();
+  const genColor = ["match", ["get", "gen"], "Gen1", gen.Gen1, "Gen2", gen.Gen2, gen.Gen3];
+  const hover = ["boolean", ["feature-state", "hover"], false];
+  map.addSource("stations", { type: "geojson", data: pointsFC(rows) });
+  map.addSource("columns", { type: "geojson", data: stationColsFC(rows) });
+  map.addSource("cities", { type: "geojson", data: citiesFC(rows) });
+  map.addSource("city-columns", { type: "geojson", data: cityColsFC(rows) });
+  map.addLayer({ id: "st-heat", type: "heatmap", source: "stations", layout: { visibility: "none" }, paint: {
+    "heatmap-weight": ["interpolate", ["linear"], ["get", "fr"], 0.03, 0, 0.09, 1],
+    "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 3, 1.1, 10, 2.6],
+    "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 3, 14, 6, 28, 10, 56],
+    "heatmap-color": ["interpolate", ["linear"], ["heatmap-density"], 0, HEAT[0], 0.15, HEAT[1], 0.3, HEAT[2], 0.5, HEAT[3], 0.7, HEAT[4], 0.85, HEAT[5], 1, HEAT[6]],
+    "heatmap-opacity": 0.9 } });
+  map.addLayer({ id: "city-cols", type: "fill-extrusion", source: "city-columns", maxzoom: 7.5, layout: { visibility: "none" }, paint: {
+    "fill-extrusion-color": ["case", hover, T.ink, heatColor("fr")], "fill-extrusion-height": ["get", "h"], "fill-extrusion-opacity": 0.9, "fill-extrusion-vertical-gradient": true } });
+  map.addLayer({ id: "st-cols", type: "fill-extrusion", source: "columns", minzoom: 7.5, layout: { visibility: "none" }, paint: {
+    "fill-extrusion-color": ["case", hover, T.ink, genColor], "fill-extrusion-height": ["get", "h"], "fill-extrusion-opacity": 0.92, "fill-extrusion-vertical-gradient": true } });
+  map.addLayer({ id: "city-bubbles", type: "circle", source: "cities", maxzoom: CITY_ZOOM, paint: {
+    "circle-color": heatColor("fr"),
+    "circle-radius": ["interpolate", ["linear"], ["zoom"], 3, ["interpolate", ["linear"], ["get", "attempts"], 450000, 12, 800000, 22],
+      6, ["interpolate", ["linear"], ["get", "attempts"], 450000, 18, 800000, 32]],
+    "circle-stroke-color": ["case", hover, T.ink, T.surface], "circle-stroke-width": ["case", hover, 3, 2], "circle-opacity": 0.92 } });
+  map.addLayer({ id: "city-labels", type: "symbol", source: "cities", maxzoom: CITY_ZOOM, layout: {
+    "text-field": ["format", ["get", "city"], { "text-font": ["literal", ["Noto Sans Bold"]], "font-scale": 1 }, "\n", {}, ["get", "label"], { "font-scale": 0.82 }],
+    "text-font": ["Noto Sans Regular"], "text-size": 13, "text-anchor": ["get", "side"], "text-justify": "auto", "text-allow-overlap": true,
+    "text-offset": ["match", ["get", "side"], "right", ["literal", [-2.3, 0]], ["literal", [2.3, 0]]], "text-line-height": 1.25 },
+    paint: { "text-color": T.ink, "text-halo-color": T.surface, "text-halo-width": 1.6 } });
+  map.addLayer({ id: "st-dots", type: "circle", source: "stations", minzoom: 0, paint: {
+    "circle-color": genColor,
+    "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, ["interpolate", ["linear"], ["get", "fr"], 0.035, 3.5, 0.09, 8], 11, ["interpolate", ["linear"], ["get", "fr"], 0.035, 7, 0.09, 18]],
+    "circle-stroke-color": ["case", hover, T.ink, T.surface], "circle-stroke-width": ["case", hover, 2.5, 1.5], "circle-opacity": 0.92 } });
+  applyMode(false, !mapFitted);
+  mapFitted = true;
+}
+
+function applyMode(animate = true, fit = true) {
+  if (!map?.getLayer("st-dots")) return;
+  for (const id of ALL_LAYERS) map.setLayoutProperty(id, "visibility", LAYERS[mapMode].includes(id) ? "visible" : "none");
+  map.setLayerZoomRange("st-dots", { points: CITY_ZOOM, heat: 7, columns: 0 }[mapMode], 24);
+  map.setPaintProperty("st-dots", "circle-opacity", mapMode === "heat" ? 0.3 : 0.92);
+  if (fit) fitStations(animate);
+  mapLegend();
+}
+
+function fitStations(animate = true) {
+  const rows = mapRows();
+  if (!map || !rows.length) return;
+  const b = new maplibregl.LngLatBounds();
+  rows.forEach((s) => b.extend([s.longitude, s.latitude]));
+  const cols = mapMode === "columns";
+  const cam = map.cameraForBounds(b, { padding: mapPadding(), maxZoom: 11.5 });
+  if (!cam) return;
+  const one = state.cities.size === 1;
+  map.flyTo({ center: cam.center, zoom: cam.zoom + (cols && !one ? 0.2 : 0), pitch: cols ? (one ? 55 : 45) : 0, bearing: cols ? -12 : 0,
+    duration: animate && !REDUCED ? 1400 : 0, essential: true });
+}
+
+function updateMap() {
+  if (!map?.getSource("stations")) return;
+  const rows = mapRows();
+  map.getSource("stations").setData(pointsFC(rows));
+  map.getSource("columns").setData(stationColsFC(rows));
+  map.getSource("cities").setData(citiesFC(rows));
+  map.getSource("city-columns").setData(cityColsFC(rows));
+  popup?.remove();
+  fitStations(true);
+}
+
+function stationCard(s) {
   const gen = GEN();
-  markers = rows.map((s) => {
-    const tip = el("div", {}, el("strong", { text: s.station_id }), el("br"),
-      document.createTextNode(`${s.city} · ${s.charger_generation} · ${s.location_type.replace(/_/g, " ")}`), el("br"),
-      document.createTextNode(`Failure rate ${pct(s.failure_rate_all)} · ${Math.round(s.swaps_per_day)} swaps/day`));
-    return L.circleMarker([s.latitude, s.longitude], {
-      radius: 3 + Math.max(0, s.failure_rate_all - 0.03) * 170, color: T.surface, weight: 2, fillColor: gen[s.charger_generation], fillOpacity: 0.88,
-    }).bindTooltip(tip, { direction: "top", offset: [0, -6] }).addTo(map);
+  const grid = el("div", { class: "pop-grid" });
+  [["Failure rate", pct(s.failure_rate_all)], ["Failure rate, Mar–Jun 2025", pct(s.fail_2025)], ["Swaps per day", Math.round(s.swaps_per_day)],
+    ["Swap attempts", int(s.attempts)], ["Location", s.location_type.replace(/_/g, " ")], ["Host", s.host_type.replace(/_/g, " ")],
+    ["Opened", WAVE_NAME[s.expansion_wave] ?? s.expansion_wave], ["Connectivity", s.connectivity_tier]]
+    .forEach(([k, v]) => grid.append(el("span", { text: k }), el("span", { text: String(v) })));
+  return el("div", { class: "map-pop" },
+    el("div", { class: "pop-head" }, el("i", { class: "swatch", style: `background:${gen[s.charger_generation]}` }), document.createTextNode(s.station_id)),
+    el("div", { class: "pop-sub", text: `${s.zone.replace(/^[A-Z]+-/, "")}, ${s.city} · ${s.charger_generation} cabinet` }), grid);
+}
+function cityCard(name) {
+  const c = cityAgg(mapRows()).find((x) => x.city === name);
+  if (!c) return null;
+  const grid = el("div", { class: "pop-grid" });
+  [["Failure rate", pct(c.fr)], ["Stations", c.n], ["Gen1 cabinets", `${c.gen1} of ${c.n}`], ["Swap attempts", int(c.attempts)], ["Swaps per day (2025)", int(c.spd)]]
+    .forEach(([k, v]) => grid.append(el("span", { text: k }), el("span", { text: String(v) })));
+  return el("div", { class: "map-pop" }, el("div", { class: "pop-head", text: c.city }), el("div", { class: "pop-sub", text: "Click to zoom into this city's stations" }), grid);
+}
+function showPopup(id, lngLat) {
+  const s = stationById(id);
+  if (s) popup.setLngLat(lngLat).setDOMContent(stationCard(s)).addTo(map);
+}
+function setHover(source, fid) {
+  if (hoverId) map.setFeatureState(hoverId, { hover: false });
+  hoverId = fid == null ? null : { source, id: fid };
+  if (hoverId) map.setFeatureState(hoverId, { hover: true });
+}
+function zoomToCity(name) {
+  const rows = D.stations.filter((s) => s.city === name);
+  const b = new maplibregl.LngLatBounds();
+  rows.forEach((s) => b.extend([s.longitude, s.latitude]));
+  const cam = map.cameraForBounds(b, { padding: mapPadding(), maxZoom: 11.5 });
+  popup.remove();
+  map.flyTo({ center: cam.center, zoom: Math.max(cam.zoom, 8), pitch: mapMode === "columns" ? 55 : 0, bearing: mapMode === "columns" ? -12 : 0, duration: REDUCED ? 0 : 1800, essential: true });
+}
+function bindMapEvents() {
+  popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 14, maxWidth: "300px" });
+  const leave = () => { setHover(null, null); popup.remove(); map.getCanvas().style.cursor = ""; };
+  for (const [layer, source] of [["st-dots", "stations"], ["st-cols", "columns"]]) {
+    const on = (e) => {
+      const f = e.features?.[0];
+      if (!f) return;
+      setHover(source, f.id);
+      showPopup(f.properties.id, source === "stations" ? f.geometry.coordinates : e.lngLat);
+      map.getCanvas().style.cursor = "pointer";
+    };
+    map.on("mousemove", layer, on);
+    map.on("click", layer, on);
+    map.on("mouseleave", layer, leave);
+  }
+  for (const [layer, source] of [["city-bubbles", "cities"], ["city-cols", "city-columns"]]) {
+    map.on("mousemove", layer, (e) => {
+      const f = e.features?.[0];
+      if (!f) return;
+      setHover(source, f.id);
+      const card = cityCard(f.properties.city);
+      if (card) popup.setLngLat(source === "cities" ? f.geometry.coordinates : e.lngLat).setDOMContent(card).addTo(map);
+      map.getCanvas().style.cursor = "pointer";
+    });
+    map.on("click", layer, (e) => { const f = e.features?.[0]; if (f) zoomToCity(f.properties.city); });
+    map.on("mouseleave", layer, leave);
+  }
+  map.on("zoomend", mapLegend);
+  map.on("styleimagemissing", (e) => { if (!map.hasImage(e.id)) map.addImage(e.id, { width: 1, height: 1, data: new Uint8Array(4) }); });
+}
+
+function mapLegend() {
+  const box = $("#map-legend"), gen = GEN();
+  const cityLevel = map && map.getZoom() < (mapMode === "columns" ? 7.5 : CITY_ZOOM);
+  const genRow = el("div", { class: "lg-row" }, ...Object.entries(gen).map(([g, c]) =>
+    el("span", { class: "lg-item" }, el("i", { class: "dot", style: `inline-size:11px;block-size:11px;background:${c}` }), document.createTextNode(`${g} cabinets`))));
+  const ramp = (lo, hi) => [el("i", { class: "ramp", style: `background:linear-gradient(90deg, ${HEAT.slice(2).join(", ")})` }),
+    el("div", { class: "ends" }, el("span", { text: lo }), el("span", { text: hi }))];
+  const hint = (t) => el("span", { text: t });
+  if (mapMode === "heat") {
+    box.replaceChildren(el("span", { class: "lg-title", text: "Where failures concentrate" }),
+      el("i", { class: "ramp", style: `background:linear-gradient(90deg, ${HEAT.slice(1).join(", ")})` }),
+      el("div", { class: "ends" }, el("span", { text: "fewer" }), el("span", { text: "more failures" })));
+  } else if (mapMode === "columns") {
+    box.replaceChildren(...(cityLevel
+      ? [el("span", { class: "lg-title", text: "City columns · height and colour = failure rate" }), ...ramp("3.5%", "7.5%+"), hint("Zoom in or click a city for station columns")]
+      : [el("span", { class: "lg-title", text: "Station columns · height = failure rate" }), genRow, hint("Right-drag (or Ctrl + drag) to rotate and tilt")]));
+  } else if (cityLevel) {
+    box.replaceChildren(el("span", { class: "lg-title", text: "Cities · colour = failure rate · size = swap volume" }), ...ramp("3.5%", "7.5%+"),
+      hint("Zoom in or click a city to see its stations"));
+  } else {
+    const sizes = el("div", { class: "lg-row" }, ...[[7, "4%"], [11, "6%"], [16, "8%+"]].map(([d, l]) =>
+      el("span", { class: "lg-item" }, el("i", { class: "dot", style: `inline-size:${d}px;block-size:${d}px;background:var(--muted)` }), document.createTextNode(l))));
+    box.replaceChildren(el("span", { class: "lg-title", text: "Stations · colour = charger generation · size = failure rate" }), genRow, sizes);
+  }
+}
+
+function setMapMode(mode) {
+  mapMode = mode;
+  $$("#map-mode button").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.mode === mode)));
+  popup?.remove();
+  applyMode(true);
+}
+
+function exportMapPng() {
+  if (!map) return;
+  map.once("render", () => {
+    const src = map.getCanvas();
+    const c = el("canvas");
+    c.width = src.width; c.height = src.height;
+    const ctx = c.getContext("2d");
+    ctx.drawImage(src, 0, 0);
+    const dpr = window.devicePixelRatio || 1;
+    const txt = "© OpenStreetMap contributors · OpenFreeMap · VoltRelay network analysis";
+    ctx.font = `${11 * dpr}px Inter, system-ui, sans-serif`;
+    const w = ctx.measureText(txt).width;
+    ctx.fillStyle = isDark() ? "rgba(26,26,25,0.85)" : "rgba(252,252,251,0.88)";
+    ctx.fillRect(c.width - w - 16 * dpr, c.height - 22 * dpr, w + 16 * dpr, 22 * dpr);
+    ctx.fillStyle = isDark() ? "#c3c2b7" : "#52514e";
+    ctx.fillText(txt, c.width - w - 8 * dpr, c.height - 7 * dpr);
+    c.toBlob((blob) => {
+      const a = el("a", { href: URL.createObjectURL(blob), download: `voltrelay-station-map-${mapMode}.png` });
+      document.body.append(a); a.click(); a.remove();
+    });
   });
-  if (rows.length) map.fitBounds(L.latLngBounds(rows.map((s) => [s.latitude, s.longitude])).pad(0.12), { animate: false });
+  map.triggerRepaint();
+}
+
+function initMap() {
+  if (map) return map;
+  const fail = () => { $("#map-fallback").hidden = false; return null; };
+  if (!window.maplibregl) return fail();
+  try {
+    map = new maplibregl.Map({ container: "station-map", style: MAP_STYLE(), center: [78.3, 22.8], zoom: 3.9, attributionControl: false,
+      cooperativeGestures: true, maxPitch: 70, fadeDuration: 150 });
+  } catch (e) {
+    return fail();
+  }
+  map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
+  map.addControl(new maplibregl.FullscreenControl({ container: $("#map-card .map-wrap") }), "top-right");
+  map.addControl(new maplibregl.AttributionControl({}), "bottom-right");
+  map.on("style.load", addStationLayers);
+  bindMapEvents();
+  return map;
+}
+
+function flyToStation(id) {
+  const s = stationById(id);
+  if (!s) return;
+  $("#map-card").scrollIntoView({ behavior: REDUCED ? "auto" : "smooth", block: "center" });
+  if (!initMap()) return;
+  const go = () => {
+    map.flyTo({ center: [s.longitude, s.latitude], zoom: 12, pitch: mapMode === "columns" ? 55 : 0, duration: REDUCED ? 0 : 2200, essential: true });
+    map.once("moveend", () => showPopup(id, [s.longitude, s.latitude]));
+  };
+  map.getLayer("st-dots") ? go() : map.once("idle", go);
+}
+
+function mapControls() {
+  $$("#map-mode button").forEach((b) => b.addEventListener("click", () => setMapMode(b.dataset.mode)));
+  $("#map-reset").addEventListener("click", () => { popup?.remove(); fitStations(true); });
+  $("#map-png").addEventListener("click", exportMapPng);
+  $("#map-csv").addEventListener("click", () => downloadCsv({ cols: ["station_id", "city", "zone", "latitude", "longitude", "charger_generation", "location_type", "host_type",
+    "expansion_wave", "connectivity_tier", "swaps_per_day", "attempts", "failures", "failure_rate_all", "fail_2025"].map((k) => ({ key: k, label: k })), rows: mapRows() }, "voltrelay-stations.csv"));
+  const io = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) { io.disconnect(); initMap(); } }, { rootMargin: "300px 0px" });
+  io.observe($("#map-card"));
 }
 function worstStations() {
   const rows = D.stations.filter((s) => state.cities.has(s.city)).sort((a, b) => b.failure_rate_all - a.failure_rate_all).slice(0, 10);
@@ -334,7 +581,9 @@ function worstStations() {
   const tb = el("tbody");
   for (const r of rows) {
     const bar = el("div", { class: "bar-cell" }, el("i", { style: `inline-size:${(r.failure_rate_all / max) * 80}px` }), document.createTextNode(pct(r.failure_rate_all)));
-    tb.append(el("tr", {}, el("td", { text: r.station_id }), el("td", { text: r.city }),
+    const link = el("button", { type: "button", class: "station-link", text: r.station_id, "aria-label": `Show ${r.station_id} on the map` });
+    link.addEventListener("click", () => flyToStation(r.station_id));
+    tb.append(el("tr", {}, el("td", {}, link), el("td", { text: r.city }),
       el("td", {}, el("i", { class: "swatch", style: `background:${gen[r.charger_generation]}` }), document.createTextNode(r.charger_generation)),
       el("td", {}, bar), el("td", { class: "num", text: Math.round(r.swaps_per_day) })));
   }
@@ -348,7 +597,7 @@ function cityFilter() {
   const sync = () => {
     btns.forEach((b) => b.setAttribute("aria-pressed", String(state.cities.has(b.dataset.city))));
     all.setAttribute("aria-pressed", String(state.cities.size === CITIES.length));
-    refresh("heatmap"); drawMarkers(); worstStations();
+    refresh("heatmap"); updateMap(); worstStations();
   };
   all.addEventListener("click", () => { state.cities = new Set(CITIES); sync(); });
   btns.forEach((b) => b.addEventListener("click", () => {
@@ -724,13 +973,17 @@ function themeToggle() {
     try { localStorage.setItem("vr-theme", next); } catch (e) { /* storage unavailable */ }
     T = tokens();
     [...live.keys()].forEach(render);
-    if (tiles) tiles.setUrl(tileUrl());
-    drawMarkers(); worstStations();
-    $("#map-legend") && initLegendColors();
+    HEAT = heatRamp();
+    if (map) {
+      map.stop();
+      popup?.remove();
+      hoverId = null;
+      ALL_LAYERS.forEach((id) => map.getLayer(id) && map.removeLayer(id));
+      ["stations", "columns", "cities", "city-columns"].forEach((id) => map.getSource(id) && map.removeSource(id));
+      map.setStyle(MAP_STYLE(), { diff: false });
+    }
+    worstStations();
   });
-}
-function initLegendColors() {
-  $$("#map-legend .swatch").forEach((s, i) => (s.style.background = Object.values(GEN())[i]));
 }
 function packToggle() {
   $$("#pack-toggle button").forEach((b) => b.addEventListener("click", () => {
@@ -754,4 +1007,4 @@ packToggle();
 themeToggle();
 scrollSpy();
 reveal();
-initMap();
+mapControls();

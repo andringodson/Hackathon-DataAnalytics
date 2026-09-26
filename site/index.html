@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.css" />
   <link rel="stylesheet" href="styles.css" />
   <script>
     try { const t = localStorage.getItem("vr-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
@@ -131,17 +131,30 @@
         <figure class="card" data-chart="hourly"><figcaption><h3>By hour of day</h3><p>3W riders fail twice as often at every hour; the evening peak (shaded) is worst.</p></figcaption></figure>
         <figure class="card" data-chart="eventmix"><figcaption><h3>Why attempts fail</h3><p>Share of all attempts, by outcome. Summer spikes are stockouts.</p></figcaption></figure>
       </div>
-      <div class="grid-map">
-        <figure class="card map-card" data-map="stations">
-          <figcaption><h3>Station map</h3><p>Colour = charger generation · size = failure rate.</p></figcaption>
-          <div class="map" id="station-map" role="region" aria-label="Map of swap stations"></div>
-          <div class="legend-row" id="map-legend"></div>
-        </figure>
-        <figure class="card" data-table="worst-stations">
-          <figcaption><h3>Worst 10 stations</h3><p>By share of attempts that failed, Jan 2024 – Jun 2025.</p></figcaption>
-          <div class="table-scroll" id="worst-stations"></div>
-        </figure>
-      </div>
+      <figure class="card wide map-card" id="map-card">
+        <figcaption><h3>Station map</h3><p>Every station, filtered by the cities above. Switch views to see where failures concentrate, hover a station for its numbers, or tilt with right-drag.</p></figcaption>
+        <div class="map-toolbar">
+          <div class="segmented" id="map-mode" role="radiogroup" aria-label="Map view">
+            <button type="button" role="radio" aria-checked="true" data-mode="points">Stations</button>
+            <button type="button" role="radio" aria-checked="false" data-mode="heat">Heatmap</button>
+            <button type="button" role="radio" aria-checked="false" data-mode="columns">3D columns</button>
+          </div>
+          <div class="map-actions">
+            <button type="button" class="ghost" id="map-reset"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>Reset view</button>
+            <button type="button" class="ghost" id="map-png"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="m21 17-5-5-8 7"/></svg>PNG</button>
+            <button type="button" class="ghost" id="map-csv"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>CSV</button>
+          </div>
+        </div>
+        <div class="map-wrap">
+          <div class="map" id="station-map" role="region" aria-label="Interactive map of swap stations"></div>
+          <div class="map-legend" id="map-legend" aria-live="polite"></div>
+          <div class="map-fallback" id="map-fallback" hidden>The interactive map needs WebGL, which this browser has turned off. The station table below lists the same data.</div>
+        </div>
+      </figure>
+      <figure class="card wide" data-table="worst-stations">
+        <figcaption><h3>Worst 10 stations</h3><p>By share of attempts that failed, Jan 2024 – Jun 2025. Click a station to fly to it on the map.</p></figcaption>
+        <div class="table-scroll" id="worst-stations"></div>
+      </figure>
     </section>
 
     <!-- 03 STATIONS -->
@@ -286,7 +299,7 @@
   </footer>
 
   <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
   <script src="app.js" type="module"></script>
 </body>
 </html>
