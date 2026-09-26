@@ -1,7 +1,7 @@
 # VoltRelay Energy — Battery-Swap Network Analysis
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/andringodson/Hackathon-DataAnalytics-26/blob/main/notebooks/VoltRelay_Analysis.ipynb)
-[![Dashboard](https://img.shields.io/badge/dashboard-live-2a78d6)](https://andringodson.github.io/Hackathon-DataAnalytics-26/)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/andringodson/Hackathon-DataAnalytics26/blob/main/notebooks/VoltRelay_Analysis.ipynb)
+[![Dashboard](https://img.shields.io/badge/dashboard-live-2a78d6)](https://andringodson.github.io/Hackathon-DataAnalytics26/)
 
 Submission for the **Gradient Learnings Data Analytics Hackathon**: an investigation of what drives service failures, new-rider churn and eroding margins on VoltRelay's battery-swapping network for electric 2W/3W riders (6 Indian cities, Jan 2024 – Jun 2025, 3.9M swap attempts).
 
@@ -9,10 +9,10 @@ Submission for the **Gradient Learnings Data Analytics Hackathon**: an investiga
 
 | Deliverable | Link |
 |---|---|
-| **Colab notebook**: data understanding, cleaning, EDA, analysis of all six core questions and five deep dives; runs top to bottom | [`notebooks/VoltRelay_Analysis.ipynb`](notebooks/VoltRelay_Analysis.ipynb) · [open in Colab](https://colab.research.google.com/github/andringodson/Hackathon-DataAnalytics-26/blob/main/notebooks/VoltRelay_Analysis.ipynb) |
+| **Colab notebook**: data understanding, cleaning, EDA, analysis of all six core questions and five deep dives; runs top to bottom | [`notebooks/VoltRelay_Analysis.ipynb`](notebooks/VoltRelay_Analysis.ipynb) · [open in Colab](https://colab.research.google.com/github/andringodson/Hackathon-DataAnalytics26/blob/main/notebooks/VoltRelay_Analysis.ipynb) |
 | **Analysis report**: problem, approach, insights, visuals, findings, recommendations | [`report/analysis_report.md`](report/analysis_report.md) · [PDF](report/analysis_report.pdf) |
 | **Three-minute video**: script and suggested visuals | [`report/video_script.md`](report/video_script.md) |
-| **Interactive dashboard** (bonus) | [andringodson.github.io/Hackathon-DataAnalytics-26](https://andringodson.github.io/Hackathon-DataAnalytics-26/) (interactive web app on GitHub Pages: OLED-black royal design with editorial serif typography and a cursor-reactive background, story-led sections with smooth transitions, filters that morph charts in place, 3D station map, table view and CSV export for every chart; accessible (zero axe violations), installable and cached for instant repeat visits) |
+| **Interactive dashboard** (bonus) | [andringodson.github.io/Hackathon-DataAnalytics26](https://andringodson.github.io/Hackathon-DataAnalytics26/) (interactive web app on GitHub Pages: OLED-black royal design with editorial serif typography and a cursor-reactive background, story-led sections with smooth transitions, filters that morph charts in place, 3D station map, table view and CSV export for every chart; accessible (zero axe violations), installable and cached for instant repeat visits) |
 
 ## Key findings
 
